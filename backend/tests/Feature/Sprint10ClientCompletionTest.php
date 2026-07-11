@@ -110,8 +110,22 @@ class Sprint10ClientCompletionTest extends TestCase
 
     public function test_client_communications_crud(): void
     {
-        // 1. List initially empty
+        // A plain employee holds no clients.* permission — the communications
+        // endpoints must refuse them (they previously had no authorization at
+        // all; see the Clients module audit).
         $this->actingAs($this->employee, 'sanctum')
+            ->getJson("/api/v1/clients/{$this->clientUser->id}/communications")
+            ->assertStatus(403);
+
+        // CRUD is exercised as a sales exec (clients.view).
+        $salesExec = User::factory()->create([
+            'email' => 'salesexec_client_test@creativals.com',
+            'status' => 'active',
+        ]);
+        $salesExec->assignRole('sales_exec');
+
+        // 1. List initially empty
+        $this->actingAs($salesExec, 'sanctum')
             ->getJson("/api/v1/clients/{$this->clientUser->id}/communications")
             ->assertStatus(200)
             ->assertJsonCount(0, 'data');
@@ -124,7 +138,7 @@ class Sprint10ClientCompletionTest extends TestCase
             'communication_date' => now()->toDateTimeString(),
         ];
 
-        $response = $this->actingAs($this->employee, 'sanctum')
+        $response = $this->actingAs($salesExec, 'sanctum')
             ->postJson("/api/v1/clients/{$this->clientUser->id}/communications", $logData)
             ->assertStatus(201)
             ->assertJsonPath('data.subject', 'Follow up on design proposal');
@@ -132,13 +146,13 @@ class Sprint10ClientCompletionTest extends TestCase
         $logId = $response->json('data.id');
 
         // 3. List contains 1 entry
-        $this->actingAs($this->employee, 'sanctum')
+        $this->actingAs($salesExec, 'sanctum')
             ->getJson("/api/v1/clients/{$this->clientUser->id}/communications")
             ->assertStatus(200)
             ->assertJsonCount(1, 'data');
 
-        // 4. Delete entry
-        $this->actingAs($this->employee, 'sanctum')
+        // 4. Delete entry — the recorder may delete their own log
+        $this->actingAs($salesExec, 'sanctum')
             ->deleteJson("/api/v1/clients/{$this->clientUser->id}/communications/{$logId}")
             ->assertStatus(200);
 
