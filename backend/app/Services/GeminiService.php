@@ -51,6 +51,18 @@ class GeminiService
     }
 
     /**
+     * Whether a real AI model can actually be called (feature enabled AND a
+     * key is configured). Callers that need an honest "AI vs. fallback"
+     * distinction (e.g. the dashboard briefing) must check this instead of
+     * relying on chat()/chatWithoutTools(), which silently degrade to a
+     * mock/simulator response when no key is present.
+     */
+    public function isConfigured(): bool
+    {
+        return $this->enabled && !empty($this->apiKey) && $this->apiKey !== 'null';
+    }
+
+    /**
      * Send messages to Gemini, handling text, files, and function calling.
      */
     public function chat(array $history, array $attachments = [], bool $isConfirmed = false): array
@@ -767,7 +779,7 @@ class GeminiService
                     'type' => 'OBJECT',
                     'properties' => [
                         'task' => ['type' => 'INTEGER', 'description' => 'Task ID'],
-                        'status' => ['type' => 'STRING', 'description' => 'todo, in_progress, in_review, completed'],
+                        'status' => ['type' => 'STRING', 'description' => 'todo, in_progress, review, blocked, done, cancelled'],
                     ],
                     'required' => ['task', 'status']
                 ]

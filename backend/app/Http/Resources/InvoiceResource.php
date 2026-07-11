@@ -88,6 +88,16 @@ class InvoiceResource extends JsonResource
                 'total_amount' => $item->total_amount,
                 'sort_order' => $item->sort_order,
             ]),
+            // Approval-history timeline (flagged in the Invoicing audit —
+            // the frontend timeline rendered "no actions logged" forever
+            // because this was never exposed).
+            'approvals' => $this->whenLoaded('approvals', fn () => $this->approvals->map(fn ($a) => [
+                'id' => $a->id,
+                'action' => $a->action,
+                'actor' => $a->actor ? ['id' => $a->actor->id, 'name' => $a->actor->name] : null,
+                'notes' => $a->notes,
+                'created_at' => $a->created_at?->toIso8601String(),
+            ])->values(), []),
             'payments' => $this->payments->map(fn($payment) => [
                 'id' => $payment->id,
                 'payment_number' => $payment->payment_number,

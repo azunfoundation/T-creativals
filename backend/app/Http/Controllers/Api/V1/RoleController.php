@@ -92,7 +92,7 @@ class RoleController extends Controller
         $this->authorize('update', $role);
 
         // Prevent editing core system roles
-        if (in_array($role->name, ['founder', 'super-admin'], true)) {
+        if ($role->name === 'founder') {
             return response()->json([
                 'message' => "The '{$role->name}' role cannot be modified.",
             ], 403);
@@ -123,7 +123,7 @@ class RoleController extends Controller
     {
         $this->authorize('delete', $role);
 
-        if (in_array($role->name, ['founder', 'super-admin'], true)) {
+        if ($role->name === 'founder') {
             return response()->json([
                 'message' => "The '{$role->name}' role cannot be deleted.",
             ], 403);
@@ -158,7 +158,7 @@ class RoleController extends Controller
         // unconditional bypass), so its permission set can't be edited away
         // through this endpoint even though update()/destroy() already block
         // renaming/deleting it.
-        if (in_array($role->name, ['founder', 'super-admin'], true)) {
+        if ($role->name === 'founder') {
             return response()->json([
                 'message' => "The '{$role->name}' role's permissions cannot be modified.",
             ], 403);

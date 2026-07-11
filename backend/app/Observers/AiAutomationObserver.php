@@ -15,6 +15,14 @@ use Illuminate\Support\Facades\Log;
 class AiAutomationObserver
 {
     /**
+     * Re-entrancy guard: an automation's create_task action fires
+     * task.created, which would re-evaluate automations — a rule triggering
+     * on task.created that also creates a task would loop forever. Records
+     * created BY an automation therefore never trigger further automations.
+     */
+    protected static bool $executing = false;
+
+    /**
      * Handle the model "updated" event.
      */
     public function updated(Model $model): void
@@ -35,6 +43,10 @@ class AiAutomationObserver
      */
     protected function evaluateAutomations(Model $model, string $actionType): void
     {
+        if (self::$executing) {
+            return;
+        }
+
         $event = $this->getEventName($model, $actionType);
         if (!$event) {
             return;
@@ -45,10 +57,36 @@ class AiAutomationObserver
             ->where('is_active', true)
             ->get();
 
+        self::$executing = true;
+        try {
+            $this->runAutomations($automations, $model, $event);
+        } finally {
+            self::$executing = false;
+        }
+    }
+
+    /** @param \Illuminate\Support\Collection<int, AiAutomation> $automations */
+    protected function runAutomations($automations, Model $model, string $event): void
+    {
         foreach ($automations as $auto) {
             try {
                 if ($this->checkConditions($model, $auto->conditions)) {
                     $this->executeActions($auto->actions, $model, $auto->user_id);
+
+                    // Honest activity trail: without this, a user could never
+                    // tell whether a rule ever actually fired.
+                    $auto->forceFill([
+                        'last_triggered_at' => now(),
+                        'trigger_count' => ($auto->trigger_count ?? 0) + 1,
+                    ])->saveQuietly();
+
+                    \App\Models\AiAuditLog::create([
+                        'user_id' => $auto->user_id,
+                        'action_type' => 'automation_executed',
+                        'description' => "Automation rule '{$auto->name}' fired on {$event}.",
+                        'payload' => ['automation_id' => $auto->id, 'trigger_event' => $event],
+                        'result' => ['status' => 'executed'],
+                    ]);
                 }
             } catch (\Throwable $e) {
                 Log::error("Failed executing AI automation: {$auto->name}", ['error' => $e->getMessage()]);
@@ -139,10 +177,21 @@ class AiAutomationObserver
             $params = $action['params'] ?? [];
 
             if ($type === 'create_task') {
+                // A task must land in a real project — silently defaulting to
+                // project id 1 created tasks in whatever project happened to
+                // have that id. Skip (and log) instead of guessing.
+                $projectId = $params['project_id'] ?? null;
+                if (!$projectId || !Project::whereKey($projectId)->exists()) {
+                    Log::warning('AI automation create_task skipped: no valid project_id configured', [
+                        'params' => $params,
+                    ]);
+                    continue;
+                }
                 Task::create([
-                    'project_id' => $params['project_id'] ?? 1,
+                    'project_id' => $projectId,
                     'title' => $this->parsePlaceholders($params['title'] ?? 'Follow-up Task', $triggerModel),
                     'assigned_to' => $params['assigned_to'] ?? $creatorId,
+                    'created_by' => $creatorId,
                     'priority' => $params['priority'] ?? 'medium',
                     'status' => 'todo',
                 ]);

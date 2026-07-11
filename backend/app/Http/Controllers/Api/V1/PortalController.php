@@ -48,6 +48,12 @@ class PortalController extends Controller
             return response()->json(['message' => 'Access denied. Portal access has been disabled for your account.'], 403);
         }
 
+        // A suspended or deactivated client account must not reach the portal
+        // — the account status set on the Clients page is the kill switch.
+        if ($user->status !== 'active') {
+            return response()->json(['message' => 'Access denied. Your account is currently inactive — please contact your account manager.'], 403);
+        }
+
         // Revoke any pre-existing portal tokens to enforce single-session behaviour.
         $user->tokens()->where('name', 'client-portal')->delete();
 
@@ -124,8 +130,12 @@ class PortalController extends Controller
         $user = $request->user();
         $this->assertIsPortalClient($user);
 
+        // Only invoices that have actually been issued to the client —
+        // internal drafts and not-yet-approved invoices are staff-side
+        // workflow states the client should never see.
         $invoices = Invoice::with(['currency', 'payments'])
             ->where('client_id', $user->id)
+            ->whereIn('status', ['sent', 'partially_paid', 'paid', 'overdue'])
             ->latest('issue_date')
             ->paginate((int) $request->input('per_page', 15));
 
@@ -157,6 +167,12 @@ class PortalController extends Controller
     {
         if (!$user->hasRole('client') || !$user->is_client_portal_user) {
             abort(403, 'Access denied. This portal is for clients only.');
+        }
+
+        // Status is re-checked per request so suspending a client kills their
+        // existing portal session, not just future logins.
+        if ($user->status !== 'active') {
+            abort(403, 'Access denied. Your account is currently inactive — please contact your account manager.');
         }
     }
 }

@@ -262,6 +262,14 @@ class PayrollRunController extends Controller
         $year = (int) ($validated['year'] ?? now()->year);
         $month = (int) ($validated['month'] ?? now()->month);
 
+        // 60-second cache, matching the reporting layer's convention (this
+        // endpoint was the one flagged exception in the Production Readiness
+        // audit).
+        $result = \Illuminate\Support\Facades\Cache::remember(
+            "payroll_cost_allocation_{$year}_{$month}",
+            60,
+            function () use ($year, $month) {
+
         // Fetch all approved timesheets for the period
         $timesheets = Timesheet::with(['user.compensation', 'project'])
             ->whereYear('date', $year)
@@ -318,6 +326,10 @@ class PayrollRunController extends Controller
             $data['breakdown'] = array_values($data['breakdown']);
             $result[] = $data;
         }
+
+        return $result;
+            }
+        );
 
         return response()->json($result);
     }

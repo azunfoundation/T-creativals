@@ -133,9 +133,14 @@ class UserController extends Controller
         ])->toArray();
         $user->departments()->sync($departmentSync);
 
-        $managerSync = collect($validated['manager_ids'] ?? [])->mapWithKeys(fn ($id) => [
-            $id => ['relationship_type' => 'direct', 'is_primary' => true],
-        ])->toArray();
+        // First manager listed is the primary reporting line (previously every
+        // manager was flagged primary, making the flag meaningless).
+        $managerSync = collect($validated['manager_ids'] ?? [])
+            ->filter(fn ($id) => (int) $id !== $user->id)
+            ->values()
+            ->mapWithKeys(fn ($id, $index) => [
+                $id => ['relationship_type' => 'direct', 'is_primary' => $index === 0],
+            ])->toArray();
         $user->managers()->sync($managerSync);
 
         $emailSent = $this->queueWelcomeEmail($user, $validated['password']);
@@ -239,8 +244,25 @@ class UserController extends Controller
             $user->departments()->sync($syncData);
         }
 
+        // Reporting lines (PRD: many-to-many reporting) — store() already
+        // synced these on create, but edits could never change them.
+        if ($request->has('manager_ids')) {
+            $this->authorizeRoleAssignment($request);
+            $request->validate([
+                'manager_ids'   => ['array'],
+                'manager_ids.*' => ['exists:users,id'],
+            ]);
+            $managerSync = collect($request->manager_ids)
+                ->filter(fn ($id) => (int) $id !== $user->id) // no self-reporting
+                ->values()
+                ->mapWithKeys(fn ($id, $index) => [
+                    $id => ['relationship_type' => 'direct', 'is_primary' => $index === 0],
+                ])->toArray();
+            $user->managers()->sync($managerSync);
+        }
+
         return response()->json([
-            'data'    => new UserResource($user->load(['roles', 'departments'])),
+            'data'    => new UserResource($user->load(['roles', 'departments', 'managers'])),
             'message' => 'User updated successfully.',
         ]);
     }
@@ -280,8 +302,10 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
 
-        // Only founder/director/hr can reset passwords
-        if (!$request->user()->hasAnyRole(['founder', 'director', 'hr'])) {
+        // Resetting someone's password is a people-management action —
+        // users.edit (founder/director/hr per the seeder), not a hardcoded
+        // role-name list.
+        if (!$request->user()->hasPermissionTo('users.edit')) {
             return response()->json(['message' => 'You are not authorized to reset passwords.'], 403);
         }
 

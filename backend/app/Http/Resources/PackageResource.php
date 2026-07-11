@@ -25,6 +25,10 @@ class PackageResource extends JsonResource
             'slug' => $this->slug,
             'description' => $this->description,
             'price' => $this->price,
+            // Null on legacy rows saved before discounts were persisted —
+            // the UI derives a fixed-amount display for those.
+            'discount_type' => $this->discount_type,
+            'discount_value' => $this->discount_value,
             'billing_cycle' => $this->billing_cycle,
             'is_active' => $this->is_active,
             'is_featured' => $this->is_featured,

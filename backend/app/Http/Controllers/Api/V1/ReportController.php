@@ -6,17 +6,15 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
-use App\Models\Quote;
 use App\Models\User;
 use App\Services\FinancialReportService;
+use App\Services\GeminiService;
 use App\Services\LeadReportService;
 use App\Services\ProfitabilityService;
 use App\Services\UtilisationService;
 use Carbon\Carbon;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -26,17 +24,34 @@ class ReportController extends Controller
     protected LeadReportService $leadService;
     protected ProfitabilityService $profitabilityService;
     protected UtilisationService $utilisationService;
+    protected GeminiService $gemini;
+
+    /**
+     * Project statuses that mean "currently being delivered". Both values are
+     * real, reachable states in the Project status enum — dashboards that only
+     * checked 'active' silently ignored every 'in_progress' project.
+     */
+    protected const RUNNING_PROJECT_STATUSES = ['active', 'in_progress'];
+
+    /**
+     * Invoice statuses that represent a real receivable a client is expected
+     * to pay (draft/pending_review/pending_approval aren't billed yet;
+     * void/cancelled never will be).
+     */
+    protected const RECEIVABLE_INVOICE_STATUSES = ['approved', 'sent', 'partially_paid', 'overdue'];
 
     public function __construct(
         FinancialReportService $financialService,
         LeadReportService $leadService,
         ProfitabilityService $profitabilityService,
-        UtilisationService $utilisationService
+        UtilisationService $utilisationService,
+        GeminiService $gemini
     ) {
         $this->financialService = $financialService;
         $this->leadService = $leadService;
         $this->profitabilityService = $profitabilityService;
         $this->utilisationService = $utilisationService;
+        $this->gemini = $gemini;
     }
 
     /**
@@ -602,53 +617,101 @@ class ReportController extends Controller
     /**
      * Consolidated Dashboard Overview
      * Route: GET /api/v1/reports/dashboard
+     *
+     * Every section is permission-gated server-side: a section the caller may
+     * not see is simply absent from the payload (the frontend renders only the
+     * sections present). Previously the attention lists, financial trends,
+     * team performance table, sales funnel, and executive briefing were
+     * computed and returned to EVERY authenticated user — leaking company-wide
+     * revenue, payroll, and per-employee performance data to plain employees.
      */
     public function dashboardOverview(Request $request)
     {
         $user = $request->user();
-        
-        // Use a short cache window (e.g. 60 seconds) to avoid CPU spikes
-        // and instantly resolve subsequent page reloads/focus queries.
-        $cacheKey = 'dashboard_overview_' . $user->id;
-        
+
+        // Short per-user cache window to absorb reloads/focus refetches.
+        // Key is versioned: the payload shape changed when sections became
+        // permission-gated.
+        $cacheKey = 'dashboard_overview_v2_' . $user->id;
+
         $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($user) {
             $now = Carbon::now();
-            
-            // This Month range
+            $today = $now->toDateString();
+
             $thisMonthFrom = $now->copy()->startOfMonth();
             $thisMonthTo = $now->copy()->endOfMonth();
-            
-            // Last Month range
             $lastMonthFrom = $now->copy()->subMonth()->startOfMonth();
             $lastMonthTo = $now->copy()->subMonth()->endOfMonth();
 
+            // Founder holds every permission and director all but three (see
+            // RolesPermissionsSeeder), so permission strings alone are the
+            // source of truth — no role-name matching.
+            $canViewFinancial = $user->hasPermissionTo('reports.view_financial');
+            $canViewSales = $user->hasPermissionTo('reports.view_sales');
+            $canViewHr = $user->hasPermissionTo('reports.view_hr');
+            $isPm = $user->hasRole('project_manager');
+            $canViewAllInvoices = $canViewFinancial || $user->hasPermissionTo('invoices.view_all');
+            $canViewAllLeads = $canViewSales || $user->hasPermissionTo('leads.view_all');
+            $canViewAllProjects = $user->hasPermissionTo('projects.view_all');
+            $canSeeProjects = $canViewAllProjects || $user->hasPermissionTo('projects.view') || $canViewFinancial;
+
             $dashboardData = [];
 
-            // 1. Financial Overview
-            $canViewFinancial = $user->hasRole('founder') || $user->hasRole('director') || $user->hasPermissionTo('reports.view_financial');
-            
-            $thisMonthRevenueData = null;
-            $lastMonthRevenueData = null;
-            $expensesData = null;
-            $avgUtilisationPct = 0.0;
-            $mostProfitableProjectName = 'None';
-            $mostProfitableProjectMargin = 0.0;
-            $mostProfitableProjectProfit = 0.0;
-            
+            // Employee hourly-rate map — loaded at most once per request, and
+            // only when a section that costs labor actually needs it
+            // (previously re-queried per section AND per project in the
+            // Project Health loop).
+            $userHourlyRates = null;
+            $getHourlyRates = function () use (&$userHourlyRates): array {
+                if ($userHourlyRates === null) {
+                    $userHourlyRates = User::with('compensation')->get()->mapWithKeys(function ($u) {
+                        return [$u->id => $u->hourly_rate];
+                    })->toArray();
+                }
+                return $userHourlyRates;
+            };
+
+            // Fresh, correctly-scoped Project query per call site: full
+            // visibility for projects.view_all / financial reporting holders;
+            // own managed/member projects for everyone else with projects.view.
+            $scopedProjectsQuery = function () use ($user, $canViewAllProjects, $canViewFinancial) {
+                $q = Project::query();
+                if (!$canViewAllProjects && !$canViewFinancial) {
+                    if ($user->hasRole('client')) {
+                        $q->where('client_id', $user->id);
+                    } else {
+                        $q->where(function ($qq) use ($user) {
+                            $qq->where('manager_id', $user->id)
+                               ->orWhereHas('members', function ($mq) use ($user) {
+                                   $mq->where('user_id', $user->id);
+                               });
+                        });
+                    }
+                }
+                return $q;
+            };
+
+            // ── 1. Financial Overview (reports.view_financial only) ─────────
             if ($canViewFinancial) {
-                $thisMonthRevenueData = $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo);
-                $lastMonthRevenueData = $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo);
-                $expensesData = $this->financialService->getExpenseBreakdown($thisMonthFrom, $thisMonthTo);
-                
-                $dashboardData['this_month_revenue'] = $thisMonthRevenueData;
-                $dashboardData['last_month_revenue'] = $lastMonthRevenueData;
-                $dashboardData['this_month_expenses'] = $expensesData;
-                
-                // Profitability summary
-                $projectsQuery = Project::query()->whereBetween('start_date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()]);
-                $projects = $projectsQuery->get();
+                $dashboardData['this_month_revenue'] = $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo);
+                $dashboardData['last_month_revenue'] = $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo);
+                $dashboardData['this_month_expenses'] = $this->financialService->getExpenseBreakdown($thisMonthFrom, $thisMonthTo);
+
+                // Profitability summary — period-overlap filter (same fix as
+                // ReportController::projectProfitability): a project counts for
+                // this month if it was ACTIVE at any point during it, not only
+                // if it happened to start inside the month.
+                $projects = Project::query()
+                    ->where(function ($q) use ($thisMonthTo) {
+                        $q->whereNull('start_date')->orWhere('start_date', '<=', $thisMonthTo->toDateString());
+                    })
+                    ->where(function ($q) use ($thisMonthFrom) {
+                        $q->whereNull('end_date')->orWhere('end_date', '>=', $thisMonthFrom->toDateString());
+                    })
+                    ->with('invoice')
+                    ->get();
                 $projectIds = $projects->pluck('id')->toArray();
-                
+
                 // Prefetch profitability helper DB values to bypass N+1 inside loop
                 $timesheetsGrouped = DB::table('timesheets')
                     ->whereIn('project_id', $projectIds)
@@ -668,14 +731,9 @@ class ReportController extends Controller
                     ->get()
                     ->keyBy('project_id');
 
-                $userHourlyRates = User::with('compensation')->get()->mapWithKeys(function ($u) {
-                    return [$u->id => $u->hourly_rate];
-                })->toArray();
-
                 $totalRevenue = 0.0;
                 $totalLabor = 0.0;
                 $totalExpenses = 0.0;
-                $totalCost = 0.0;
                 $totalProfit = 0.0;
                 foreach ($projects as $proj) {
                     $pId = $proj->id;
@@ -688,12 +746,11 @@ class ReportController extends Controller
                         $thisMonthTo,
                         $preTimesheets,
                         $preExpensesSum,
-                        $userHourlyRates
+                        $getHourlyRates()
                     );
                     $totalRevenue += $profit['revenue'];
                     $totalLabor += $profit['labor_cost'];
                     $totalExpenses += $profit['expense_cost'];
-                    $totalCost += $profit['total_cost'];
                     $totalProfit += $profit['net_profit'];
                 }
                 $avgMarginPct = $totalRevenue > 0 ? round(($totalProfit / $totalRevenue) * 100, 2) : 0.00;
@@ -707,33 +764,121 @@ class ReportController extends Controller
                         'avg_margin_pct' => $avgMarginPct,
                     ]
                 ];
+
+                // 6-month historical cash flow trends. Payroll previously
+                // filtered on status = 'paid' — a state no code path ever
+                // reaches (runs only move draft → approved), so the payroll
+                // line was permanently ₹0.
+                $historicalTrends = [];
+                for ($i = 5; $i >= 0; $i--) {
+                    $monthStart = $now->copy()->subMonths($i)->startOfMonth();
+                    $monthEnd = $now->copy()->subMonths($i)->endOfMonth();
+
+                    $invoicedSum = (float) DB::table('invoices')
+                        ->whereNull('deleted_at')
+                        ->whereIn('status', array_merge(self::RECEIVABLE_INVOICE_STATUSES, ['paid']))
+                        ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                        ->sum(DB::raw('total_amount * exchange_rate'));
+
+                    $collectedSum = (float) DB::table('payments')
+                        ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
+                        ->whereNull('payments.deleted_at')
+                        ->whereNull('invoices.deleted_at')
+                        ->whereBetween('payments.payment_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                        ->sum(DB::raw('payments.amount * invoices.exchange_rate'));
+
+                    $expensesSum = (float) DB::table('expenses')
+                        ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
+                        ->whereNull('expenses.deleted_at')
+                        ->whereIn('expenses.status', ['approved', 'reimbursed'])
+                        ->whereBetween('expenses.expense_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                        ->sum(DB::raw('expenses.amount * currencies.exchange_rate_to_inr'));
+
+                    $payrollSum = (float) DB::table('payroll_runs')
+                        ->join('currencies', 'payroll_runs.currency_id', '=', 'currencies.id')
+                        ->whereNull('payroll_runs.deleted_at')
+                        ->whereIn('payroll_runs.status', ['approved', 'processed', 'paid'])
+                        ->whereBetween(DB::raw('coalesce(payroll_runs.processed_at, payroll_runs.created_at)'), [$monthStart->toDateTimeString(), $monthEnd->toDateTimeString()])
+                        ->sum(DB::raw('payroll_runs.total_net * currencies.exchange_rate_to_inr'));
+
+                    $historicalTrends[] = [
+                        'month_key' => $monthStart->format('Y-m'),
+                        'month_name' => $monthStart->format('M Y'),
+                        'revenue' => round($invoicedSum, 2),
+                        'collections' => round($collectedSum, 2),
+                        'expenses' => round($expensesSum, 2),
+                        'payroll' => round($payrollSum, 2),
+                        'profit' => round($invoicedSum - $expensesSum - $payrollSum, 2),
+                    ];
+                }
+                $dashboardData['financial_trends'] = $historicalTrends;
             }
 
-            // 2. Sales & CRM
-            $canViewSales = $user->hasRole('founder') || $user->hasRole('director') || $user->hasPermissionTo('reports.view_sales');
+            // Active clients — clients with a running project. Financial and
+            // sales viewers both legitimately need this KPI.
+            if ($canViewFinancial || $canViewSales) {
+                $dashboardData['active_clients_count'] = DB::table('projects')
+                    ->whereNull('projects.deleted_at')
+                    ->whereIn('projects.status', self::RUNNING_PROJECT_STATUSES)
+                    ->join('users', 'projects.client_id', '=', 'users.id')
+                    ->distinct('projects.client_id')
+                    ->count('projects.client_id');
+            }
+
+            // ── 2. Sales & CRM (reports.view_sales only) ────────────────────
             if ($canViewSales) {
                 $dashboardData['this_month_pipeline'] = $this->leadService->getPipelineSummary($thisMonthFrom, $thisMonthTo, 'created');
-                
+
                 $quoteStats = DB::table('quotes')
                     ->select(
                         DB::raw('count(id) as total_quotes'),
                         DB::raw("sum(case when status = 'pending' then 1 else 0 end) as pending_count")
                     )
                     ->whereNull('deleted_at')
-                    ->whereBetween('created_at', [$thisMonthFrom->startOfDay(), $thisMonthTo->endOfDay()])
+                    ->whereBetween('created_at', [$thisMonthFrom, $thisMonthTo])
                     ->first();
                 $dashboardData['this_month_quotes'] = [
                     'summary' => [
                         'pending_count' => (int) ($quoteStats->pending_count ?? 0),
                     ]
                 ];
+
+                // Current-state sales funnel (snapshot of open pipeline, not
+                // scoped to this month — labels in the UI say so).
+                $freshLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'cold')->count();
+                $warmLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'warm')->count();
+                $hotLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'hot')->count();
+                $quotesSentCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'sent')->count();
+                $wonCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', true)->count();
+                $lostCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'rejected')->count();
+                $pipelineValue = (float) DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->sum('estimated_monthly_budget');
+
+                // Real scheduled follow-ups still open (lead_followups rows),
+                // not "every unconverted lead" — the PRD's "Pending Follow-ups"
+                // means follow-ups someone actually scheduled.
+                $pendingFollowupsCount = DB::table('lead_followups')
+                    ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+                    ->whereNull('leads.deleted_at')
+                    ->where('lead_followups.is_completed', false)
+                    ->count();
+
+                $dashboardData['sales_pipeline'] = [
+                    'fresh_leads' => $freshLeadsCount,
+                    'warm_leads' => $warmLeadsCount,
+                    'hot_leads' => $hotLeadsCount,
+                    'quotes_sent' => $quotesSentCount,
+                    'won' => $wonCount,
+                    'lost' => $lostCount,
+                    'pipeline_value' => $pipelineValue,
+                    'pending_followups' => $pendingFollowupsCount,
+                ];
             }
 
-            // 3. Projects & Team (Utilisation)
-            $canViewProjects = $user->hasRole('founder') || $user->hasRole('director') || $user->hasPermissionTo('reports.view_hr') || $user->hasRole('project_manager');
-            if ($canViewProjects) {
+            // ── 3. Team utilisation + performance (reports.view_hr, or a PM
+            //       scoped to the people who log time on their projects) ─────
+            if ($canViewHr || $isPm) {
                 $usersQuery = User::query()->where('status', 'active')->where('is_client_portal_user', false);
-                if (!$user->hasRole('founder') && !$user->hasRole('director') && !$user->hasPermissionTo('reports.view_hr') && $user->hasRole('project_manager')) {
+                if (!$canViewHr && $isPm) {
                     $pmProjectUserIds = DB::table('timesheets')
                         ->join('projects', 'timesheets.project_id', '=', 'projects.id')
                         ->where('projects.manager_id', $user->id)
@@ -743,7 +888,7 @@ class ReportController extends Controller
                 }
                 $teamUsers = $usersQuery->with(['departments', 'compensation'])->get();
                 $teamUserIds = $teamUsers->pluck('id')->toArray();
-                
+
                 $timesheetsGrouped = DB::table('timesheets')
                     ->whereIn('user_id', $teamUserIds)
                     ->whereIn('status', ['submitted', 'approved'])
@@ -752,9 +897,21 @@ class ReportController extends Controller
                     ->get()
                     ->groupBy('user_id');
 
+                $completedTasksGrouped = DB::table('tasks')
+                    ->whereIn('assigned_to', $teamUserIds)
+                    // Task enum has 'done', not 'completed' — the old filter
+                    // made "Tasks Done" permanently zero.
+                    ->where('status', 'done')
+                    ->whereNull('deleted_at')
+                    ->select('assigned_to', DB::raw('count(*) as count'))
+                    ->groupBy('assigned_to')
+                    ->get()
+                    ->keyBy('assigned_to');
+
                 $totalExpected = 0.0;
                 $totalLogged = 0.0;
                 $totalBillable = 0.0;
+                $teamPerformanceList = [];
                 foreach ($teamUsers as $tu) {
                     $uId = $tu->id;
                     $preTimesheets = $timesheetsGrouped->get($uId, collect([]));
@@ -764,6 +921,21 @@ class ReportController extends Controller
                         $totalLogged += $util['logged_hours'];
                         $totalBillable += $util['billable_hours'];
                     }
+
+                    $logged = (float) $util['logged_hours'];
+                    $expected = (float) $util['expected_hours'];
+                    $utilisation = $expected > 0 ? round(($logged / $expected) * 100, 1) : 0.0;
+                    $completedTasks = (int) ($completedTasksGrouped->get($uId)->count ?? 0);
+
+                    $teamPerformanceList[] = [
+                        'id' => $uId,
+                        'name' => $tu->name,
+                        'logged_hours' => $logged,
+                        'expected_hours' => $expected,
+                        'utilisation_pct' => $utilisation,
+                        'completed_tasks' => $completedTasks,
+                        'productivity_score' => min(100, (int) round(($completedTasks * 8) + ($utilisation * 0.6))),
+                    ];
                 }
                 $avgUtilisationPct = $totalExpected > 0 ? round(($totalLogged / $totalExpected) * 100, 2) : 0.00;
                 $dashboardData['this_month_utilisation'] = [
@@ -772,160 +944,385 @@ class ReportController extends Controller
                         'avg_utilisation_pct' => $avgUtilisationPct,
                     ]
                 ];
+
+                usort($teamPerformanceList, function ($a, $b) {
+                    return $b['productivity_score'] <=> $a['productivity_score'];
+                });
+                $dashboardData['team_performance'] = array_slice($teamPerformanceList, 0, 12);
             }
 
-            // 4. Projects List
-            $canViewProjectsList = $canViewProjects || $canViewFinancial;
-            if ($canViewProjectsList) {
-                $projectsListQuery = Project::query();
-                if (!$user->hasRole('founder') && !$user->hasRole('director') && !$user->hasPermissionTo('projects.view_all')) {
-                    if ($user->hasRole('client')) {
-                        $projectsListQuery->where('client_id', $user->id);
-                    } elseif ($user->hasPermissionTo('projects.view')) {
-                        $projectsListQuery->where(function ($q) use ($user) {
-                            $q->where('manager_id', $user->id)
-                              ->orWhereHas('members', function ($mq) use ($user) {
-                                  $mq->where('user_id', $user->id);
-                              });
-                        });
+            // ── 4. Projects summary + health (scoped to what this user can
+            //       actually see; health only covers running projects) ───────
+            $delayedProjectsList = null;
+            $delayedProjectsCount = null;
+            if ($canSeeProjects) {
+                $scopedProjects = $scopedProjectsQuery()
+                    ->with(['manager:id,name', 'client:id,name', 'invoice'])
+                    ->get();
+                $runningProjects = $scopedProjects
+                    ->filter(function ($p) {
+                        return in_array($p->status, self::RUNNING_PROJECT_STATUSES, true);
+                    })
+                    ->values();
+
+                $overdueRunning = $runningProjects->filter(function ($p) use ($today) {
+                    return $p->end_date && $p->end_date->toDateString() < $today;
+                });
+
+                $dashboardData['projects_summary'] = [
+                    'total_count' => $scopedProjects->count(),
+                    'active_count' => $runningProjects->count(),
+                    'completed_count' => $scopedProjects->where('status', 'completed')->count(),
+                    'overdue_count' => $overdueRunning->count(),
+                    'avg_completion_pct' => $runningProjects->count() > 0
+                        ? round((float) $runningProjects->avg('completion_percentage'), 1)
+                        : 0.0,
+                ];
+
+                // Delayed-projects data for the Attention panel — reuses the
+                // already-fetched scoped collection, no extra queries.
+                $delayedProjectsCount = $overdueRunning->count();
+                $delayedProjectsList = $overdueRunning
+                    ->sortBy(function ($p) {
+                        return $p->end_date?->toDateString() ?? '9999-12-31';
+                    })
+                    ->take(5)
+                    ->map(function ($p) {
+                        return [
+                            'id' => $p->id,
+                            'project_number' => $p->project_number,
+                            'name' => $p->name,
+                            'end_date' => $p->end_date?->toDateString(),
+                            'completion_percentage' => $p->completion_percentage,
+                            'manager' => $p->manager?->name ?? 'Unassigned',
+                        ];
+                    })
+                    ->values();
+
+                // Project Health — batched (previously this loop ran 3 queries
+                // PER project, including re-loading every user's compensation
+                // each iteration).
+                $runningIds = $runningProjects->pluck('id')->toArray();
+                $healthTimesheets = DB::table('timesheets')
+                    ->whereIn('project_id', $runningIds)
+                    ->whereIn('status', ['submitted', 'approved'])
+                    ->whereNull('deleted_at')
+                    ->get()
+                    ->groupBy('project_id');
+                $healthExpenses = DB::table('expenses')
+                    ->select('project_id', DB::raw('sum(amount) as total_expenses'))
+                    ->whereIn('project_id', $runningIds)
+                    ->whereIn('status', ['approved', 'reimbursed'])
+                    ->whereNull('deleted_at')
+                    ->groupBy('project_id')
+                    ->get()
+                    ->keyBy('project_id');
+
+                $projectHealthList = [];
+                foreach ($runningProjects as $proj) {
+                    $pId = $proj->id;
+                    $profit = $this->profitabilityService->calculate(
+                        $proj,
+                        null,
+                        null,
+                        $healthTimesheets->get($pId, collect([])),
+                        (float) ($healthExpenses->get($pId)->total_expenses ?? 0.0),
+                        $getHourlyRates()
+                    );
+
+                    $budget = (float) $proj->budget_amount;
+                    $cost = (float) $profit['total_cost'];
+                    $budgetUtilisation = $budget > 0 ? round(($cost / $budget) * 100, 1) : 0.0;
+
+                    $budgetHours = (float) $proj->budget_hours;
+                    $hoursLogged = (float) $profit['hours_logged'];
+                    $timeUtilisation = $budgetHours > 0 ? round(($hoursLogged / $budgetHours) * 100, 1) : 0.0;
+
+                    $isOverdue = $proj->end_date && $proj->end_date->toDateString() < $today;
+                    $daysToDeadline = $proj->end_date
+                        ? Carbon::now()->startOfDay()->diffInDays($proj->end_date->copy()->startOfDay(), false)
+                        : null;
+                    $riskLevel = 'low';
+                    if ($isOverdue || $budgetUtilisation > 100 || $timeUtilisation > 100) {
+                        $riskLevel = 'critical';
+                    } elseif ($budgetUtilisation > 80 || $timeUtilisation > 80 || ($daysToDeadline !== null && $daysToDeadline >= 0 && $daysToDeadline <= 7)) {
+                        $riskLevel = 'medium';
                     }
+
+                    $projectHealthList[] = [
+                        'id' => $pId,
+                        'project_number' => $proj->project_number,
+                        'name' => $proj->name,
+                        'completion_percentage' => $proj->completion_percentage,
+                        'budget_amount' => $budget,
+                        'cost' => $cost,
+                        'budget_utilisation_pct' => $budgetUtilisation,
+                        'budget_hours' => $budgetHours,
+                        'hours_logged' => $hoursLogged,
+                        'time_utilisation_pct' => $timeUtilisation,
+                        'risk_level' => $riskLevel,
+                        'manager' => $proj->manager?->name ?? 'Unassigned',
+                        'client' => $proj->client?->name ?? 'Unknown Client',
+                        'end_date' => $proj->end_date?->toDateString(),
+                    ];
                 }
-                $dashboardData['projects_list'] = $projectsListQuery->get();
+                $riskRank = ['critical' => 0, 'medium' => 1, 'low' => 2];
+                usort($projectHealthList, function ($a, $b) use ($riskRank) {
+                    return ($riskRank[$a['risk_level']] <=> $riskRank[$b['risk_level']])
+                        ?: ($b['budget_utilisation_pct'] <=> $a['budget_utilisation_pct']);
+                });
+                $dashboardData['project_health'] = array_slice($projectHealthList, 0, 15);
             }
 
-            // 5. Alerts list
-            $alertsQuery = DB::table('alerts')
+            // ── 5. Alerts list (always own records) ─────────────────────────
+            $dashboardData['alerts_list'] = DB::table('alerts')
                 ->where('user_id', $user->id)
                 ->whereNull('deleted_at')
                 ->orderBy('created_at', 'desc')
-                ->limit(10);
-            $dashboardData['alerts_list'] = $alertsQuery->get();
+                ->limit(10)
+                ->get();
 
-            // ─── Executive Command Center Metrics Redesign ───
-            
-            // A. Overdue Invoices
-            $overdueInvoicesQuery = DB::table('invoices')
+            // ── 6. My Day (every user, own records only) ────────────────────
+            $myOverdueTasksQuery = DB::table('tasks')
                 ->whereNull('deleted_at')
-                ->whereNotIn('status', ['paid', 'draft', 'rejected'])
-                ->where('due_date', '<', $now->toDateString());
-            $overdueInvoicesCount = $overdueInvoicesQuery->count();
-            $overdueInvoicesAmount = (float) $overdueInvoicesQuery->sum(DB::raw('due_amount * exchange_rate'));
+                ->where('assigned_to', $user->id)
+                ->whereNotIn('status', ['done', 'cancelled'])
+                ->where('due_date', '<', $today);
+            $todayAttendance = DB::table('attendance_records')
+                ->where('user_id', $user->id)
+                ->whereDate('date', $today)
+                ->first();
+            $dashboardData['my_summary'] = [
+                'open_tasks_count' => DB::table('tasks')
+                    ->whereNull('deleted_at')
+                    ->where('assigned_to', $user->id)
+                    ->whereNotIn('status', ['done', 'cancelled'])
+                    ->count(),
+                'overdue_tasks_count' => (clone $myOverdueTasksQuery)->count(),
+                'overdue_tasks' => (clone $myOverdueTasksQuery)
+                    ->select('id', 'task_number', 'title', 'due_date')
+                    ->orderBy('due_date', 'asc')
+                    ->limit(5)
+                    ->get(),
+                'hours_this_month' => round((float) DB::table('timesheets')
+                    ->whereNull('deleted_at')
+                    ->where('user_id', $user->id)
+                    ->whereIn('status', ['draft', 'submitted', 'approved'])
+                    ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()])
+                    ->sum('hours_logged'), 2),
+                'attendance_today' => $todayAttendance ? [
+                    'status' => $todayAttendance->status,
+                    'clocked_in' => $todayAttendance->check_in_at !== null && $todayAttendance->check_out_at === null,
+                    'check_in_at' => $todayAttendance->check_in_at,
+                    'check_out_at' => $todayAttendance->check_out_at,
+                ] : null,
+            ];
 
-            // B. Overdue Tasks
-            $overdueTasksCount = DB::table('tasks')
-                ->whereNull('deleted_at')
-                ->where('status', '!=', 'completed')
-                ->where('due_date', '<', $now->toDateString())
-                ->count();
+            // ── 7. Attention Required (each list/count only for callers the
+            //       backend would actually let act on it) ─────────────────────
+            $attention = ['counts' => []];
 
-            // C. Delayed Projects
-            $delayedProjectsCount = DB::table('projects')
-                ->whereNull('deleted_at')
-                ->where('status', 'active')
-                ->where('end_date', '<', $now->toDateString())
-                ->count();
+            if ($canViewAllInvoices) {
+                // Columns are table-qualified because the list query below
+                // joins users (which also soft-deletes).
+                $overdueInvoicesQuery = DB::table('invoices')
+                    ->whereNull('invoices.deleted_at')
+                    ->whereIn('invoices.status', self::RECEIVABLE_INVOICE_STATUSES)
+                    ->where('invoices.due_date', '<', $today);
+                $attention['counts']['invoices'] = (clone $overdueInvoicesQuery)->count();
+                $attention['counts']['invoices_amount'] = (float) (clone $overdueInvoicesQuery)->sum(DB::raw('invoices.due_amount * invoices.exchange_rate'));
+                $attention['overdue_invoices'] = (clone $overdueInvoicesQuery)
+                    ->leftJoin('users', 'invoices.client_id', '=', 'users.id')
+                    ->select('invoices.id', 'invoices.invoice_number', 'invoices.title', 'invoices.due_date', 'invoices.due_amount', 'users.name as client')
+                    ->orderBy('invoices.due_date', 'asc')
+                    ->limit(5)
+                    ->get();
+            }
 
-            // D. Leads needing follow-up
-            $leadsNeedingFollowupCount = DB::table('leads')
-                ->whereNull('deleted_at')
-                ->where('is_converted', false)
-                ->count();
-
-            // E. Pending payroll runs
-            $pendingPayrollCount = DB::table('payroll_runs')
-                ->whereNull('deleted_at')
-                ->whereIn('status', ['draft', 'submitted', 'approved', 'processed'])
-                ->count();
-
-            // F. Pending approvals (sum of pending quotes + submitted expenses + submitted timesheets)
-            $pendingQuotesCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'pending')->count();
-            $pendingExpensesCount = DB::table('expenses')->whereNull('deleted_at')->where('status', 'submitted')->count();
-            $pendingTimesheetsCount = DB::table('timesheets')->whereNull('deleted_at')->where('status', 'submitted')->count();
-            $pendingApprovalsCount = $pendingQuotesCount + $pendingExpensesCount + $pendingTimesheetsCount;
-
-            // G. Stale leads (unconverted leads with no updates in > 14 days)
-            $staleLeadsCount = DB::table('leads')
-                ->whereNull('deleted_at')
-                ->where('is_converted', false)
-                ->where('updated_at', '<', $now->copy()->subDays(14)->toDateString())
-                ->count();
-
-            // H. Active Clients count (clients with active projects)
-            $activeClientsCount = DB::table('projects')
-                ->whereNull('projects.deleted_at')
-                ->where('projects.status', 'active')
-                ->join('users', 'projects.client_id', '=', 'users.id')
-                ->distinct('projects.client_id')
-                ->count('projects.client_id');
-
-            // I. Attention required lists
-            $overdueTasksList = DB::table('tasks')
+            // Overdue tasks — full visibility for HR/financial/all-projects
+            // holders, a PM's own projects for PMs, own assigned tasks for
+            // everyone else.
+            $overdueTasksQuery = DB::table('tasks')
                 ->whereNull('tasks.deleted_at')
-                ->where('tasks.status', '!=', 'completed')
-                ->where('tasks.due_date', '<', $now->toDateString())
+                ->whereNotIn('tasks.status', ['done', 'cancelled'])
+                ->where('tasks.due_date', '<', $today);
+            if ($canViewAllProjects || $canViewFinancial || $canViewHr) {
+                // company-wide
+            } elseif ($isPm) {
+                $overdueTasksQuery
+                    ->join('projects', 'tasks.project_id', '=', 'projects.id')
+                    ->whereNull('projects.deleted_at')
+                    ->where('projects.manager_id', $user->id);
+            } else {
+                $overdueTasksQuery->where('tasks.assigned_to', $user->id);
+            }
+            $attention['counts']['tasks'] = (clone $overdueTasksQuery)->count();
+            $attention['overdue_tasks'] = (clone $overdueTasksQuery)
                 ->leftJoin('users', 'tasks.assigned_to', '=', 'users.id')
                 ->select('tasks.id', 'tasks.task_number', 'tasks.title', 'tasks.due_date', 'users.name as assignee')
                 ->orderBy('tasks.due_date', 'asc')
                 ->limit(5)
                 ->get();
 
-            $overdueInvoicesList = DB::table('invoices')
-                ->whereNull('invoices.deleted_at')
-                ->whereNotIn('invoices.status', ['paid', 'draft', 'rejected'])
-                ->where('invoices.due_date', '<', $now->toDateString())
-                ->leftJoin('users', 'invoices.client_id', '=', 'users.id')
-                ->select('invoices.id', 'invoices.invoice_number', 'invoices.title', 'invoices.due_date', 'invoices.due_amount', 'users.name as client')
-                ->orderBy('invoices.due_date', 'asc')
-                ->limit(5)
-                ->get();
+            if ($delayedProjectsList !== null) {
+                $attention['counts']['projects'] = $delayedProjectsCount;
+                $attention['delayed_projects'] = $delayedProjectsList;
+            }
 
-            $delayedProjectsList = DB::table('projects')
-                ->whereNull('projects.deleted_at')
-                ->where('projects.status', 'active')
-                ->where('projects.end_date', '<', $now->toDateString())
-                ->leftJoin('users', 'projects.manager_id', '=', 'users.id')
-                ->select('projects.id', 'projects.project_number', 'projects.name', 'projects.end_date', 'projects.completion_percentage', 'users.name as manager')
-                ->orderBy('projects.end_date', 'asc')
-                ->limit(5)
-                ->get();
+            if ($canViewAllLeads) {
+                $staleLeadsQuery = DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where('is_converted', false)
+                    ->where('updated_at', '<', $now->copy()->subDays(14));
+                $attention['counts']['leads'] = (clone $staleLeadsQuery)->count();
+                $attention['stale_leads'] = (clone $staleLeadsQuery)
+                    ->select('id', 'lead_number', 'company_name', 'priority', 'temperature', 'updated_at')
+                    ->orderBy('updated_at', 'asc')
+                    ->limit(5)
+                    ->get();
+            }
 
-            $staleLeadsList = DB::table('leads')
+            // Pending approvals — only the queues THIS user can act on, so the
+            // badge never advertises approvals the backend would 403.
+            $pendingApprovalsCount = 0;
+            if ($user->hasPermissionTo('quotes.approve')) {
+                $pendingApprovalsCount += DB::table('quotes')->whereNull('deleted_at')->where('status', 'pending')->count();
+            }
+            if ($user->hasPermissionTo('expenses.approve')) {
+                $pendingApprovalsCount += DB::table('expenses')->whereNull('deleted_at')->where('status', 'submitted')->count();
+            }
+            if ($user->hasPermissionTo('timesheets.approve')) {
+                $pendingApprovalsCount += DB::table('timesheets')->whereNull('deleted_at')->where('status', 'submitted')->count();
+            }
+            $attention['counts']['approvals'] = $pendingApprovalsCount;
+
+            if ($user->hasPermissionTo('payroll.view')) {
+                // "Pending" payroll = runs still awaiting sign-off. 'approved'
+                // is the terminal state (see the Payroll module audit) and was
+                // wrongly counted as pending here forever.
+                $attention['counts']['payroll'] = DB::table('payroll_runs')
+                    ->whereNull('deleted_at')
+                    ->whereIn('status', ['draft', 'submitted'])
+                    ->count();
+            }
+
+            $dashboardData['attention_required'] = $attention;
+
+            return $dashboardData;
+        });
+
+        return response()->json($data);
+    }
+
+    /**
+     * Executive Briefing for the Dashboard.
+     * Route: GET /api/v1/reports/dashboard/briefing
+     *
+     * Separated from dashboardOverview so the dashboard's core data never
+     * blocks on an external AI call. The response is honest about its origin:
+     * source = 'ai' only when a real model produced the text; source =
+     * 'system' when the metrics-derived template was used (AI disabled,
+     * keyless, or the call failed). Previously $this->gemini was referenced
+     * without ever being injected, so the "AI" briefing ALWAYS threw,
+     * silently fell back to the template, and presented it as model output.
+     */
+    public function dashboardBriefing(Request $request)
+    {
+        $user = $request->user();
+        // The briefing summarizes company-wide revenue and payroll figures.
+        if (!$user->hasPermissionTo('reports.view_financial')) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        // Longer cache than the dashboard core (5 min) — this may call an
+        // external model, and headline metrics don't move minute-to-minute.
+        $data = \Illuminate\Support\Facades\Cache::remember('dashboard_briefing_v1', 300, function () {
+            $now = Carbon::now();
+            $today = $now->toDateString();
+            $thisMonthFrom = $now->copy()->startOfMonth();
+            $thisMonthTo = $now->copy()->endOfMonth();
+            $lastMonthFrom = $now->copy()->subMonth()->startOfMonth();
+            $lastMonthTo = $now->copy()->subMonth()->endOfMonth();
+
+            // ── Metrics the briefing summarizes ──────────────────────────────
+            $thisMonthRev = (float) $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo)['summary']['total_invoiced'];
+            $lastMonthRev = (float) $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo)['summary']['total_invoiced'];
+            $revDiffVal = $lastMonthRev > 0 ? (($thisMonthRev - $lastMonthRev) / $lastMonthRev) * 100 : 0.0;
+            $revChangeText = ($revDiffVal >= 0 ? 'increased ' : 'decreased ') . abs(round($revDiffVal, 1)) . '%';
+
+            $overdueInvoicesQuery = DB::table('invoices')
+                ->whereNull('deleted_at')
+                ->whereIn('status', self::RECEIVABLE_INVOICE_STATUSES)
+                ->where('due_date', '<', $today);
+            $overdueInvoicesCount = (clone $overdueInvoicesQuery)->count();
+            $overdueInvoicesAmount = (float) (clone $overdueInvoicesQuery)->sum(DB::raw('due_amount * exchange_rate'));
+
+            $overdueTasksCount = DB::table('tasks')
+                ->whereNull('deleted_at')
+                ->whereNotIn('status', ['done', 'cancelled'])
+                ->where('due_date', '<', $today)
+                ->count();
+
+            $delayedProjectsCount = DB::table('projects')
+                ->whereNull('deleted_at')
+                ->whereIn('status', self::RUNNING_PROJECT_STATUSES)
+                ->where('end_date', '<', $today)
+                ->count();
+
+            $openLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->count();
+            $pendingFollowupsCount = DB::table('lead_followups')
+                ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
                 ->whereNull('leads.deleted_at')
-                ->where('leads.is_converted', false)
-                ->where('leads.updated_at', '<', $now->copy()->subDays(14)->toDateString())
-                ->select('leads.id', 'leads.lead_number', 'leads.company_name', 'leads.priority', 'leads.temperature', 'leads.updated_at')
-                ->orderBy('leads.updated_at', 'asc')
-                ->limit(5)
-                ->get();
+                ->where('lead_followups.is_completed', false)
+                ->count();
+            $staleLeadsCount = DB::table('leads')
+                ->whereNull('deleted_at')
+                ->where('is_converted', false)
+                ->where('updated_at', '<', $now->copy()->subDays(14))
+                ->count();
 
-            $dashboardData['attention_required'] = [
-                'overdue_tasks' => $overdueTasksList,
-                'overdue_invoices' => $overdueInvoicesList,
-                'delayed_projects' => $delayedProjectsList,
-                'stale_leads' => $staleLeadsList,
-                'counts' => [
-                    'tasks' => $overdueTasksCount,
-                    'invoices' => $overdueInvoicesCount,
-                    'projects' => $delayedProjectsCount,
-                    'leads' => $staleLeadsCount,
-                    'approvals' => $pendingApprovalsCount,
-                    'payroll' => $pendingPayrollCount,
-                ]
-            ];
+            $pendingApprovalsCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'pending')->count()
+                + DB::table('expenses')->whereNull('deleted_at')->where('status', 'submitted')->count()
+                + DB::table('timesheets')->whereNull('deleted_at')->where('status', 'submitted')->count();
+            $pendingPayrollCount = DB::table('payroll_runs')
+                ->whereNull('deleted_at')
+                ->whereIn('status', ['draft', 'submitted'])
+                ->count();
 
-            // J. Most Profitable Project Overall Active
-            $activeProjectsForProfit = Project::whereNull('deleted_at')->where('status', 'active')->get();
-            if ($activeProjectsForProfit->count() > 0) {
-                $pIds = $activeProjectsForProfit->pluck('id')->toArray();
-                
-                $timesheetsGroupedProfit = DB::table('timesheets')
+            // Average team utilisation this month
+            $teamUsers = User::where('status', 'active')->where('is_client_portal_user', false)->with('compensation')->get();
+            $timesheetsGrouped = DB::table('timesheets')
+                ->whereIn('user_id', $teamUsers->pluck('id')->toArray())
+                ->whereIn('status', ['submitted', 'approved'])
+                ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()])
+                ->whereNull('deleted_at')
+                ->get()
+                ->groupBy('user_id');
+            $totalExpected = 0.0;
+            $totalLogged = 0.0;
+            foreach ($teamUsers as $tu) {
+                $util = $this->utilisationService->calculateForUser($tu, $thisMonthFrom, $thisMonthTo, $timesheetsGrouped->get($tu->id, collect([])));
+                if ($util['expected_hours'] > 0 || $util['logged_hours'] > 0) {
+                    $totalExpected += $util['expected_hours'];
+                    $totalLogged += $util['logged_hours'];
+                }
+            }
+            $avgUtilisationPct = $totalExpected > 0 ? round(($totalLogged / $totalExpected) * 100, 1) : 0.0;
+
+            // Most profitable running project (all-time figures, batched)
+            $mostProfitableProjectName = 'None';
+            $mostProfitableProjectMargin = 0.0;
+            $mostProfitableProjectProfit = 0.0;
+            $runningProjects = Project::whereIn('status', self::RUNNING_PROJECT_STATUSES)->with('invoice')->get();
+            if ($runningProjects->count() > 0) {
+                $pIds = $runningProjects->pluck('id')->toArray();
+                $profitTimesheets = DB::table('timesheets')
                     ->whereIn('project_id', $pIds)
                     ->whereIn('status', ['submitted', 'approved'])
                     ->whereNull('deleted_at')
                     ->get()
                     ->groupBy('project_id');
-
-                $expensesSumMapProfit = DB::table('expenses')
+                $profitExpenses = DB::table('expenses')
                     ->select('project_id', DB::raw('sum(amount) as total_expenses'))
                     ->whereIn('project_id', $pIds)
                     ->whereIn('status', ['approved', 'reimbursed'])
@@ -933,25 +1330,19 @@ class ReportController extends Controller
                     ->groupBy('project_id')
                     ->get()
                     ->keyBy('project_id');
-
-                $userHourlyRatesProfit = User::with('compensation')->get()->mapWithKeys(function ($u) {
+                $hourlyRates = User::with('compensation')->get()->mapWithKeys(function ($u) {
                     return [$u->id => $u->hourly_rate];
                 })->toArray();
 
-                foreach ($activeProjectsForProfit as $proj) {
-                    $pId = $proj->id;
-                    $preTimesheets = $timesheetsGroupedProfit->get($pId, collect([]));
-                    $preExpensesSum = (float) ($expensesSumMapProfit->get($pId)->total_expenses ?? 0.0);
-
+                foreach ($runningProjects as $proj) {
                     $profit = $this->profitabilityService->calculate(
                         $proj,
                         null,
                         null,
-                        $preTimesheets,
-                        $preExpensesSum,
-                        $userHourlyRatesProfit
+                        $profitTimesheets->get($proj->id, collect([])),
+                        (float) ($profitExpenses->get($proj->id)->total_expenses ?? 0.0),
+                        $hourlyRates
                     );
-                    
                     if ($profit['net_profit'] > $mostProfitableProjectProfit) {
                         $mostProfitableProjectProfit = $profit['net_profit'];
                         $mostProfitableProjectMargin = $profit['margin_percentage'];
@@ -960,255 +1351,87 @@ class ReportController extends Controller
                 }
             }
 
-            // K. Sales Funnel Details
-            $freshLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'cold')->count();
-            $warmLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'warm')->count();
-            $hotLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'hot')->count();
-            $quotesSentCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'sent')->count();
-            $wonCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', true)->count();
-            $lostCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'rejected')->count();
-            $pipelineValue = (float) DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->sum('estimated_monthly_budget');
+            // ── AI generation (only when a real model is reachable) ─────────
+            $aiJson = null;
+            if ($this->gemini->isConfigured()) {
+                $aiPrompt = "You are the Executive Business Assistant of Creativals OS. Summarize these live business metrics for the Founder/CEO. Keep it to 2 short paragraphs under 250 words total.
+                Metrics:
+                - Revenue this month: ₹" . number_format($thisMonthRev) . " (which {$revChangeText} vs last month: ₹" . number_format($lastMonthRev) . ").
+                - Overdue invoices: {$overdueInvoicesCount} invoices worth ₹" . number_format($overdueInvoicesAmount) . " are past due.
+                - Delayed projects: {$delayedProjectsCount} projects are running but past their deadline.
+                - Overdue tasks: {$overdueTasksCount} tasks are overdue.
+                - CRM: {$openLeadsCount} open leads; {$pendingFollowupsCount} scheduled follow-ups still pending; {$staleLeadsCount} leads have gone quiet for 14+ days.
+                - Team utilization: average team utilization is {$avgUtilisationPct}%.
+                - Most profitable running project: '{$mostProfitableProjectName}' (Margin: {$mostProfitableProjectMargin}%).
+                - Pending actions: {$pendingApprovalsCount} approvals pending, {$pendingPayrollCount} payroll runs awaiting sign-off.
 
-            $dashboardData['sales_pipeline'] = [
-                'fresh_leads' => $freshLeadsCount,
-                'warm_leads' => $warmLeadsCount,
-                'hot_leads' => $hotLeadsCount,
-                'quotes_sent' => $quotesSentCount,
-                'won' => $wonCount,
-                'lost' => $lostCount,
-                'pipeline_value' => $pipelineValue,
+                Format the response as JSON with two fields:
+                - \"briefing\": a beautiful, executive-style, 1st person summary (e.g. \"Revenue increased 18% this month...\")
+                - \"recommendations\": array of 3 actionable items (e.g. [\"Follow up on overdue invoices first\", ...])
+                Do not output markdown codeblocks (like ```json), output raw JSON only.";
+
+                try {
+                    $aiRes = $this->gemini->chatWithoutTools([
+                        ['role' => 'user', 'content' => $aiPrompt],
+                    ]);
+                    $content = preg_replace('/^```json\s*/i', '', $aiRes['content'] ?? '');
+                    $content = preg_replace('/```$/', '', trim($content));
+                    $decoded = json_decode($content, true);
+                    if (is_array($decoded) && !empty($decoded['briefing'])) {
+                        $aiJson = [
+                            'briefing' => (string) $decoded['briefing'],
+                            'recommendations' => array_slice(array_values(array_filter(array_map(
+                                function ($r) {
+                                    return is_string($r) ? $r : null;
+                                },
+                                (array) ($decoded['recommendations'] ?? [])
+                            ))), 0, 3),
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Dashboard AI briefing failure', ['exception' => $e->getMessage()]);
+                }
+            }
+
+            if ($aiJson) {
+                return [
+                    'briefing' => $aiJson['briefing'],
+                    'recommendations' => $aiJson['recommendations'],
+                    'source' => 'ai',
+                    'generated_at' => $now->toIso8601String(),
+                ];
+            }
+
+            // Honest metrics-derived fallback — labeled 'system' so the UI
+            // never presents it as model-written text.
+            $briefingText = "Revenue " . ($revDiffVal >= 0 ? "increased by " : "decreased by ") . abs(round($revDiffVal, 1)) . "% this month compared to last month. " .
+                "Currently, {$overdueInvoicesCount} overdue invoices totaling ₹" . number_format($overdueInvoicesAmount) . " require follow-up. " .
+                "Operations show {$delayedProjectsCount} projects behind schedule and {$overdueTasksCount} tasks past their due dates. " .
+                "The pipeline has {$openLeadsCount} open leads with {$pendingFollowupsCount} scheduled follow-ups pending, and average team utilization is holding at {$avgUtilisationPct}%. " .
+                ($mostProfitableProjectName !== 'None'
+                    ? "The top-margin running project is '{$mostProfitableProjectName}' at {$mostProfitableProjectMargin}% profitability."
+                    : "No running project currently shows a positive net profit.");
+
+            $recs = [];
+            if ($overdueInvoicesCount > 0) {
+                $recs[] = "Follow up on the {$overdueInvoicesCount} overdue invoices worth ₹" . number_format($overdueInvoicesAmount) . ".";
+            }
+            if ($delayedProjectsCount > 0 || $overdueTasksCount > 0) {
+                $recs[] = "Review delivery schedules for {$delayedProjectsCount} delayed projects and reassign the {$overdueTasksCount} overdue tasks.";
+            }
+            if ($pendingApprovalsCount > 0) {
+                $recs[] = "Clear the {$pendingApprovalsCount} pending approvals (quotes/expenses/timesheets) to unblock billing and workflows.";
+            }
+            if (count($recs) < 3) {
+                $recs[] = "Follow up with warm and hot leads in the sales pipeline to boost next month's bookings.";
+            }
+
+            return [
+                'briefing' => $briefingText,
+                'recommendations' => array_slice($recs, 0, 3),
+                'source' => 'system',
+                'generated_at' => $now->toIso8601String(),
             ];
-
-            // L. Project Health Center List
-            $projectHealthList = [];
-            foreach ($dashboardData['projects_list'] ?? [] as $proj) {
-                $pId = $proj->id;
-                
-                // Fetch timesheets and expenses for this project to compute actual costs
-                $preTimesheets = DB::table('timesheets')
-                    ->where('project_id', $pId)
-                    ->whereIn('status', ['submitted', 'approved'])
-                    ->whereNull('deleted_at')
-                    ->get();
-                $preExpensesSum = (float) DB::table('expenses')
-                    ->where('project_id', $pId)
-                    ->whereIn('status', ['approved', 'reimbursed'])
-                    ->whereNull('deleted_at')
-                    ->sum('amount');
-                
-                $userHourlyRatesMap = User::with('compensation')->get()->mapWithKeys(function ($u) {
-                    return [$u->id => $u->hourly_rate];
-                })->toArray();
-
-                $profit = $this->profitabilityService->calculate(
-                    $proj,
-                    null,
-                    null,
-                    $preTimesheets,
-                    $preExpensesSum,
-                    $userHourlyRatesMap
-                );
-                
-                $budget = (float) $proj->budget_amount;
-                $cost = (float) $profit['total_cost'];
-                $budgetUtilisation = $budget > 0 ? round(($cost / $budget) * 100, 1) : 0.0;
-                
-                $budgetHours = (float) $proj->budget_hours;
-                $hoursLogged = (float) $profit['hours_logged'];
-                $timeUtilisation = $budgetHours > 0 ? round(($hoursLogged / $budgetHours) * 100, 1) : 0.0;
-                
-                // Calculate risk
-                $isOverdue = $proj->end_date && Carbon::parse($proj->end_date)->endOfDay()->isPast();
-                $riskLevel = 'low';
-                if ($isOverdue || $budgetUtilisation > 100 || $timeUtilisation > 100) {
-                    $riskLevel = 'critical';
-                } elseif ($budgetUtilisation > 80 || $timeUtilisation > 80 || ($proj->end_date && Carbon::parse($proj->end_date)->diffInDays(Carbon::now()) <= 7)) {
-                    $riskLevel = 'medium';
-                }
-                
-                $projectHealthList[] = [
-                    'id' => $pId,
-                    'project_number' => $proj->project_number,
-                    'name' => $proj->name,
-                    'completion_percentage' => $proj->completion_percentage,
-                    'budget_amount' => $budget,
-                    'cost' => $cost,
-                    'budget_utilisation_pct' => $budgetUtilisation,
-                    'budget_hours' => $budgetHours,
-                    'hours_logged' => $hoursLogged,
-                    'time_utilisation_pct' => $timeUtilisation,
-                    'risk_level' => $riskLevel,
-                    'manager' => $proj->manager?->name ?? 'Unassigned',
-                    'client' => $proj->client?->name ?? 'Unknown Client',
-                    'end_date' => $proj->end_date?->toDateString(),
-                ];
-            }
-            $dashboardData['project_health'] = $projectHealthList;
-
-            // M. Team Performance dashboard
-            $teamUsers = User::where('status', 'active')->where('is_client_portal_user', false)->with('compensation')->get();
-            $teamUserIds = $teamUsers->pluck('id')->toArray();
-            
-            $timesheetsGroupedTeam = DB::table('timesheets')
-                ->whereIn('user_id', $teamUserIds)
-                ->whereIn('status', ['submitted', 'approved'])
-                ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()])
-                ->whereNull('deleted_at')
-                ->get()
-                ->groupBy('user_id');
-                
-            $completedTasksGroupedTeam = DB::table('tasks')
-                ->whereIn('assigned_to', $teamUserIds)
-                ->where('status', 'completed')
-                ->whereNull('deleted_at')
-                ->select('assigned_to', DB::raw('count(*) as count'))
-                ->groupBy('assigned_to')
-                ->get()
-                ->keyBy('assigned_to');
-                
-            $teamPerformanceList = [];
-            foreach ($teamUsers as $tu) {
-                $uId = $tu->id;
-                $preTimesheets = $timesheetsGroupedTeam->get($uId, collect([]));
-                $util = $this->utilisationService->calculateForUser($tu, $thisMonthFrom, $thisMonthTo, $preTimesheets);
-                
-                $logged = (float) $util['logged_hours'];
-                $expected = (float) $util['expected_hours'];
-                $utilisation = $expected > 0 ? round(($logged / $expected) * 100, 1) : 0.0;
-                $completedTasks = (int) ($completedTasksGroupedTeam->get($uId)->count ?? 0);
-                
-                // Productivity score
-                $productivityScore = min(100, round(($completedTasks * 8) + ($utilisation * 0.6)));
-                
-                $teamPerformanceList[] = [
-                    'id' => $uId,
-                    'name' => $tu->name,
-                    'logged_hours' => $logged,
-                    'expected_hours' => $expected,
-                    'utilisation_pct' => $utilisation,
-                    'completed_tasks' => $completedTasks,
-                    'productivity_score' => $productivityScore,
-                ];
-            }
-            usort($teamPerformanceList, function($a, $b) {
-                return $b['productivity_score'] <=> $a['productivity_score'];
-            });
-            $dashboardData['team_performance'] = $teamPerformanceList;
-
-            // N. 6-Month historical cash flow trends
-            $historicalTrends = [];
-            for ($i = 5; $i >= 0; $i--) {
-                $monthStart = Carbon::now()->subMonths($i)->startOfMonth();
-                $monthEnd = Carbon::now()->subMonths($i)->endOfMonth();
-                $monthKey = $monthStart->format('Y-m');
-                $monthName = $monthStart->format('M Y');
-                
-                $invoicedSum = (float) DB::table('invoices')
-                    ->whereNull('deleted_at')
-                    ->whereIn('status', ['approved', 'sent', 'paid', 'partially_paid', 'overdue'])
-                    ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                    ->sum(DB::raw('total_amount * exchange_rate'));
-                    
-                $collectedSum = (float) DB::table('payments')
-                    ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
-                    ->whereNull('payments.deleted_at')
-                    ->whereNull('invoices.deleted_at')
-                    ->whereBetween('payments.payment_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                    ->sum(DB::raw('payments.amount * invoices.exchange_rate'));
-                    
-                $expensesSum = (float) DB::table('expenses')
-                    ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
-                    ->whereNull('expenses.deleted_at')
-                    ->whereIn('expenses.status', ['approved', 'reimbursed'])
-                    ->whereBetween('expenses.expense_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                    ->sum(DB::raw('expenses.amount * currencies.exchange_rate_to_inr'));
-                    
-                $payrollSum = (float) DB::table('payroll_runs')
-                    ->join('currencies', 'payroll_runs.currency_id', '=', 'currencies.id')
-                    ->whereNull('payroll_runs.deleted_at')
-                    ->where('payroll_runs.status', 'paid')
-                    ->whereBetween(DB::raw('coalesce(payroll_runs.processed_at, payroll_runs.created_at)'), [$monthStart->toDateTimeString(), $monthEnd->toDateTimeString()])
-                    ->sum(DB::raw('payroll_runs.total_net * currencies.exchange_rate_to_inr'));
-                    
-                $historicalTrends[] = [
-                    'month_key' => $monthKey,
-                    'month_name' => $monthName,
-                    'revenue' => round($invoicedSum, 2),
-                    'collections' => round($collectedSum, 2),
-                    'expenses' => round($expensesSum, 2),
-                    'payroll' => round($payrollSum, 2),
-                    'profit' => round($invoicedSum - $expensesSum - $payrollSum, 2)
-                ];
-            }
-            $dashboardData['financial_trends'] = $historicalTrends;
-            $dashboardData['active_clients_count'] = $activeClientsCount;
-
-            // O. AI Executive Briefing Text & Actions Generation
-            $thisMonthRevVal = $thisMonthRevenueData ? $thisMonthRevenueData['summary']['total_invoiced'] : 0.0;
-            $lastMonthRevVal = $lastMonthRevenueData ? $lastMonthRevenueData['summary']['total_invoiced'] : 0.0;
-            $revDiffVal = $lastMonthRevVal > 0 ? (($thisMonthRevVal - $lastMonthRevVal) / $lastMonthRevVal) * 100 : 0.0;
-            $revChangeTextVal = ($revDiffVal >= 0 ? 'increased ' : 'decreased ') . abs(round($revDiffVal, 1)) . '%';
-
-            $aiPrompt = "You are the Executive Business Assistant of Creativals OS. Summarize these live business metrics for the Founder/CEO. Keep it to 2 short paragraphs under 250 words total.
-            Metrics:
-            - Revenue this month: ₹" . number_format($thisMonthRevVal) . " (which {$revChangeTextVal} vs last month: ₹" . number_format($lastMonthRevVal) . ").
-            - Outstanding invoices: {$overdueInvoicesCount} invoices worth ₹" . number_format($overdueInvoicesAmount) . " are overdue.
-            - Delayed projects: {$delayedProjectsCount} projects are active but past their deadline.
-            - Overdue tasks: {$overdueTasksCount} tasks are overdue.
-            - CRM: {$leadsNeedingFollowupCount} active leads require follow-up. Stale leads count is {$staleLeadsCount}.
-            - Team utilization: average team utilization is " . round($avgUtilisationPct ?? 0.0, 1) . "%.
-            - Most profitable project: '{$mostProfitableProjectName}' (Margin: {$mostProfitableProjectMargin}%).
-            - Pending actions: {$pendingApprovalsCount} approvals pending, {$pendingPayrollCount} payroll runs pending.
-            
-            Format the response as JSON with two fields:
-            - \"briefing\": a beautiful, executive-style, 1st person summary (e.g. \"Revenue increased 18% this month...\")
-            - \"recommendations\": array of 3 actionable items (e.g. [\"Follow up on overdue invoices first\", ...])
-            Do not output markdown codeblocks (like ```json), output raw JSON only.";
-
-            $aiBriefingJson = null;
-            try {
-                $aiRes = $this->gemini->chatWithoutTools([
-                    ['role' => 'user', 'content' => $aiPrompt]
-                ]);
-                $content = $aiRes['content'] ?? '';
-                
-                $content = preg_replace('/^```json\s*/i', '', $content);
-                $content = preg_replace('/```$/', '', trim($content));
-                
-                $aiBriefingJson = json_decode($content, true);
-            } catch (\Throwable $e) {
-                Log::error('Dashboard AI briefing failure', ['exception' => $e->getMessage()]);
-            }
-
-            if (!$aiBriefingJson || !isset($aiBriefingJson['briefing'])) {
-                $briefingText = "Revenue " . ($revDiffVal >= 0 ? "increased by " : "decreased by ") . abs(round($revDiffVal, 1)) . "% this month compared to last month. " .
-                                "Currently, we have {$overdueInvoicesCount} overdue invoices totaling ₹" . number_format($overdueInvoicesAmount) . " requiring immediate attention. " .
-                                "Operations show {$delayedProjectsCount} projects behind schedule and {$overdueTasksCount} tasks past their due dates. " .
-                                "The pipeline has {$leadsNeedingFollowupCount} active leads, with average team utilization holding at " . round($avgUtilisationPct ?? 0.0, 1) . "%. " .
-                                "Our top margin project this cycle is '{$mostProfitableProjectName}' at {$mostProfitableProjectMargin}% profitability.";
-                                
-                $recs = [];
-                if ($overdueInvoicesCount > 0) {
-                    $recs[] = "Initiate follow-ups on the {$overdueInvoicesCount} overdue invoices worth ₹" . number_format($overdueInvoicesAmount) . ".";
-                }
-                if ($delayedProjectsCount > 0 || $overdueTasksCount > 0) {
-                    $recs[] = "Review delivery schedules for {$delayedProjectsCount} delayed projects and assign resources to {$overdueTasksCount} overdue tasks.";
-                }
-                if ($pendingApprovalsCount > 0) {
-                    $recs[] = "Clear the {$pendingApprovalsCount} pending approvals (quotes/expenses/timesheets) to unblock billing and workflows.";
-                }
-                if (count($recs) < 3) {
-                    $recs[] = "Follow up with warm and hot leads in the sales pipeline to boost next month's bookings.";
-                }
-                
-                $aiBriefingJson = [
-                    'briefing' => $briefingText,
-                    'recommendations' => array_slice($recs, 0, 3)
-                ];
-            }
-            $dashboardData['executive_briefing'] = $aiBriefingJson;
-
-            return $dashboardData;
         });
 
         return response()->json($data);

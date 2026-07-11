@@ -19,6 +19,7 @@ class Task extends Model
         'project_id',
         'milestone_id',
         'parent_task_id',
+        'task_template_id',
         'title',
         'description',
         'assigned_to',

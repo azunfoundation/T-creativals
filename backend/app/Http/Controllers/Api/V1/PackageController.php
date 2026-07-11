@@ -47,6 +47,12 @@ class PackageController extends Controller
             'slug' => ['nullable', 'string', 'max:255', 'unique:packages,slug'],
             'description' => ['nullable', 'string'],
             'price' => ['required', 'numeric', 'min:0'],
+            // The discount model behind `price` — persisted so a
+            // percentage-discount package survives a reload as a percentage
+            // (previously only the final price was stored and the UI
+            // fabricated discount_type: 'fixed' on every load).
+            'discount_type' => ['nullable', 'string', 'in:percentage,fixed'],
+            'discount_value' => ['nullable', 'numeric', 'min:0'],
             'currency_id' => ['required', 'exists:currencies,id'],
             'billing_cycle' => ['required', 'string', 'in:one_time,monthly,quarterly,yearly'],
             'is_active' => ['nullable', 'boolean'],
@@ -112,6 +118,8 @@ class PackageController extends Controller
             'slug' => ['sometimes', 'required', 'string', 'max:255', 'unique:packages,slug,' . $package->id],
             'description' => ['nullable', 'string'],
             'price' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'discount_type' => ['nullable', 'string', 'in:percentage,fixed'],
+            'discount_value' => ['nullable', 'numeric', 'min:0'],
             'currency_id' => ['sometimes', 'required', 'exists:currencies,id'],
             'billing_cycle' => ['sometimes', 'required', 'string', 'in:one_time,monthly,quarterly,yearly'],
             'is_active' => ['nullable', 'boolean'],

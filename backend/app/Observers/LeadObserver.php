@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
+use App\Mail\LeadAssignedMail;
 use App\Models\Alert;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\LeadStage;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 
 class LeadObserver
 {
@@ -21,8 +24,9 @@ class LeadObserver
         if ($lead->sales_exec_id) {
             $currentUserId = Auth::id();
 
-            // Trigger alert for the assigned sales executive
-            Alert::create([
+            // Alert + opt-in email for the assigned sales executive, both
+            // honoring their Settings -> Notifications preferences.
+            NotificationService::alert('lead_assigned', [
                 'user_id' => $lead->sales_exec_id,
                 'triggered_by' => $currentUserId,
                 'type' => 'lead_assigned',
@@ -31,6 +35,7 @@ class LeadObserver
                 'action_url' => "/leads/{$lead->id}",
                 'metadata' => ['lead_id' => $lead->id],
             ]);
+            $this->sendAssignmentEmail($lead, (int) $lead->sales_exec_id);
 
             $execName = User::find($lead->sales_exec_id)?->name ?? 'Unknown Exec';
 
@@ -106,8 +111,9 @@ class LeadObserver
                     ? "Lead for {$lead->company_name} has been assigned to you."
                     : "Lead for {$lead->company_name} has been reassigned to you.";
 
-                // Trigger alert for the new executive
-                Alert::create([
+                // Alert + opt-in email for the new executive (preference key
+                // lead_assigned covers reassignments too)
+                NotificationService::alert('lead_assigned', [
                     'user_id' => $newExecId,
                     'triggered_by' => $currentUserId,
                     'type' => $type,
@@ -116,6 +122,7 @@ class LeadObserver
                     'action_url' => "/leads/{$lead->id}",
                     'metadata' => ['lead_id' => $lead->id],
                 ]);
+                $this->sendAssignmentEmail($lead, (int) $newExecId);
 
                 $newExecName = User::find($newExecId)?->name ?? 'Unknown Exec';
                 $oldExecName = $oldExecId ? (User::find($oldExecId)?->name ?? 'Unknown Exec') : 'None';
@@ -137,6 +144,29 @@ class LeadObserver
                     'occurred_at' => now(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Email the assignee about the lead — opt-in via the lead_assigned
+     * notification preference (previously this event had no email path at
+     * all despite the Notification Settings page once offering a toggle).
+     */
+    private function sendAssignmentEmail(Lead $lead, int $assigneeId): void
+    {
+        if (!NotificationService::emailEnabled($assigneeId, 'lead_assigned')) {
+            return;
+        }
+
+        $assignee = User::find($assigneeId);
+        if (!$assignee?->email) {
+            return;
+        }
+
+        try {
+            Mail::to($assignee->email)->queue(new LeadAssignedMail($lead, $assignee->name));
+        } catch (\Throwable $e) {
+            // Never fail the lead operation on a mail transport problem.
         }
     }
 }

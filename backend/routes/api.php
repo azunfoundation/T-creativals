@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\Auth\AuthController;
+use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\RecoveryController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\V1\RecurringBillingRuleController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\MilestoneController;
 use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\TaskTemplateController;
 use App\Http\Controllers\Api\V1\TimesheetController;
 use App\Http\Controllers\Api\V1\PayrollRunController;
 use App\Http\Controllers\Api\V1\EmployeeCompensationController;
@@ -86,8 +88,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             ->name('reset-password')
             ->middleware('throttle:5,1');
 
-        // Protected auth routes
-        Route::middleware('auth:sanctum')->group(function () {
+        // Protected auth routes (staff sessions only — the portal has its own
+        // login and never calls these)
+        Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureStaffToken::class])->group(function () {
             Route::post('/logout',           [AuthController::class, 'logout'])->name('logout');
             Route::post('/logout-all',       [AuthController::class, 'logoutAll'])->name('logout-all');
             Route::get('/me',                [AuthController::class, 'me'])->name('me');
@@ -101,7 +104,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     | Protected API Routes — Require Authentication
     |--------------------------------------------------------------------------
     */
-    Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:api', \App\Http\Middleware\EnsureStaffToken::class])->group(function () {
 
         /*
         |----------------------------------------------------------------------
@@ -232,8 +235,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('invoices/{id}/send', [InvoiceController::class, 'sendMail'])->name('invoices.send');
         Route::get('invoices/{id}/download-pdf', [InvoiceController::class, 'downloadPdf'])->name('invoices.download-pdf');
         Route::apiResource('invoices', InvoiceController::class);
-        Route::apiResource('credit-notes', CreditNoteController::class)->only(['index', 'store', 'show']);
-        Route::apiResource('payments', PaymentController::class)->only(['index', 'show', 'destroy']);
+        Route::apiResource('credit-notes', CreditNoteController::class)->only(['index', 'store']);
+        Route::apiResource('payments', PaymentController::class)->only(['index', 'destroy']);
 
         // ─── Project Management, Tasks, & Timesheets Sprint 5 ──────────────
         // Projects
@@ -297,6 +300,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             ->name('reports.')
             ->group(function () {
                 Route::get('dashboard',      [ReportController::class, 'dashboardOverview'])->name('dashboard');
+                Route::get('dashboard/briefing', [ReportController::class, 'dashboardBriefing'])->name('dashboard.briefing');
                 Route::get('revenue',        [ReportController::class, 'revenueSummary'])->name('revenue');
                 Route::get('pipeline',       [ReportController::class, 'salesPipeline'])->name('pipeline');
                 Route::get('quotes',         [ReportController::class, 'quoteConversion'])->name('quotes');
@@ -373,13 +377,33 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // ─── File Upload & Attachments System (Sprint 10) ───────────────────
         Route::post('files/upload', [FileController::class, 'upload'])->name('files.upload');
         Route::apiResource('tasks/{task}/attachments', TaskAttachmentController::class)->only(['index', 'store', 'destroy']);
+
+        // ─── Task Templates (PRD: service templates + recurring projects) ────
+        Route::get('task-templates', [TaskTemplateController::class, 'index'])->name('task-templates.index');
+        Route::post('task-templates', [TaskTemplateController::class, 'store'])->name('task-templates.store');
+        Route::put('task-templates/{taskTemplate}', [TaskTemplateController::class, 'update'])->name('task-templates.update');
+        Route::delete('task-templates/{taskTemplate}', [TaskTemplateController::class, 'destroy'])->name('task-templates.destroy');
+        Route::post('projects/{project}/apply-template', [TaskTemplateController::class, 'applyToProject'])->name('projects.apply-template');
         Route::apiResource('projects/{project}/documents', ProjectDocumentController::class)->only(['index', 'store', 'destroy']);
 
-        // ─── Client Module Extensions (Phase 8) ─────────────────────────────
+        // ─── Clients Module ──────────────────────────────────────────────────
+        // The module's own surface, gated on clients.* permission strings
+        // (the reports/users endpoints the pages previously rode on require
+        // reports.*/users.* permissions the sales roles don't hold).
+        Route::get('clients', [ClientController::class, 'index'])->name('clients.index');
+        Route::post('clients', [ClientController::class, 'store'])->name('clients.store');
+        Route::get('clients/{client}', [ClientController::class, 'show'])->name('clients.show');
+        Route::put('clients/{client}', [ClientController::class, 'update'])->name('clients.update');
+        Route::delete('clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
+        Route::post('clients/{client}/contacts', [ClientController::class, 'storeContact'])->name('clients.contacts.store');
+        Route::put('clients/{client}/contacts/{contact}', [ClientController::class, 'updateContact'])->name('clients.contacts.update');
+        Route::delete('clients/{client}/contacts/{contact}', [ClientController::class, 'destroyContact'])->name('clients.contacts.destroy');
+
         Route::apiResource('clients/{client}/communications', ClientCommunicationController::class)->only(['index', 'store', 'destroy']);
 
         // ─── AI Assistant Module ────────────────────────────────────────────
         Route::prefix('ai')->name('ai.')->group(function () {
+            Route::get('status', [AiController::class, 'status']);
             Route::get('conversations', [AiController::class, 'listConversations']);
             Route::post('conversations', [AiController::class, 'createConversation']);
             Route::get('conversations/{id}', [AiController::class, 'getConversation']);

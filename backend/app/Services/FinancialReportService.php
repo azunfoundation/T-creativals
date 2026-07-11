@@ -331,7 +331,7 @@ class FinancialReportService
             ->select(
                 'client_id',
                 DB::raw('count(id) as total_projects'),
-                DB::raw("sum(case when status = 'active' then 1 else 0 end) as active_projects"),
+                DB::raw("sum(case when status in ('active', 'in_progress') then 1 else 0 end) as active_projects"),
                 DB::raw("sum(case when status = 'on_hold' then 1 else 0 end) as on_hold_projects"),
                 DB::raw("sum(case when status = 'cancelled' then 1 else 0 end) as cancelled_projects")
             )

@@ -81,6 +81,30 @@ class LeaveController extends Controller
     {
         Gate::authorize('approve', LeaveRequest::class);
         $leaveRequest->update(['status' => 'approved', 'approved_by' => $request->user()->id, 'approved_at' => now()]);
+
+        // Approved leave becomes attendance reality: create a status='leave'
+        // record for each covered date. Days that already have a record are
+        // left untouched so an HR-set status (or a real clock-in) is never
+        // overwritten. (Flagged in the Attendance audit as a practical gap —
+        // the "Leaves" stat only counted manually-set records before this.)
+        $period = \Carbon\CarbonPeriod::create(
+            $leaveRequest->start_date,
+            $leaveRequest->end_date ?? $leaveRequest->start_date
+        );
+        foreach ($period as $day) {
+            $exists = \App\Models\AttendanceRecord::where('user_id', $leaveRequest->user_id)
+                ->whereDate('date', $day->toDateString())
+                ->exists();
+            if (!$exists) {
+                \App\Models\AttendanceRecord::create([
+                    'user_id' => $leaveRequest->user_id,
+                    'date' => $day->toDateString(),
+                    'status' => 'leave',
+                    'notes' => 'Auto-created from approved leave request #' . $leaveRequest->id,
+                ]);
+            }
+        }
+
         return response()->json(['data' => $leaveRequest->fresh()->load(['leaveType', 'user', 'approver'])]);
     }
 

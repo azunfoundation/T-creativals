@@ -260,7 +260,7 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'This action is unauthorized.'], 403);
         }
 
-        return new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service', 'payments']));
+        return new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service', 'payments', 'approvals.actor']));
     }
 
     /**
@@ -500,6 +500,33 @@ class InvoiceController extends Controller
 
             return $payment;
         });
+
+        // payment_received notification for the invoice owner (skipped when
+        // they recorded it themselves), honoring their preferences.
+        $invoice->refresh();
+        if ($invoice->created_by && $invoice->created_by !== $request->user()->id) {
+            \App\Services\NotificationService::alert('payment_received', [
+                'user_id' => $invoice->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'payment_received',
+                'title' => 'Payment Received',
+                'body' => "A payment of {$validated['amount']} was recorded on invoice {$invoice->invoice_number}.",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id, 'payment_id' => $payment->id],
+            ]);
+
+            if (\App\Services\NotificationService::emailEnabled((int) $invoice->created_by, 'payment_received')) {
+                $owner = $invoice->creator;
+                if ($owner?->email) {
+                    try {
+                        \Illuminate\Support\Facades\Mail::to($owner->email)
+                            ->queue(new \App\Mail\PaymentReceivedMail($payment, $invoice->load('client')));
+                    } catch (\Throwable $e) {
+                        // Never fail payment recording on a mail problem.
+                    }
+                }
+            }
+        }
 
         return (new PaymentResource($payment->load(['invoice', 'recorder'])))
             ->additional(['message' => 'Payment recorded successfully.'])

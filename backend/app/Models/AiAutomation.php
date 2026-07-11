@@ -16,12 +16,16 @@ class AiAutomation extends Model
         'conditions',
         'actions',
         'is_active',
+        'last_triggered_at',
+        'trigger_count',
     ];
 
     protected $casts = [
         'conditions' => 'array',
         'actions' => 'array',
         'is_active' => 'boolean',
+        'last_triggered_at' => 'datetime',
+        'trigger_count' => 'integer',
     ];
 
     public function user(): BelongsTo

@@ -17,7 +17,8 @@ class GenerateRecurringInvoices extends Command
      *
      * @var string
      */
-    protected $signature = 'creativals:generate-recurring-invoices';
+    protected $signature = 'creativals:generate-recurring-invoices
+                            {--dry-run : Report what would be generated and deactivated without writing anything}';
 
     /**
      * The console command description.
@@ -32,8 +33,25 @@ class GenerateRecurringInvoices extends Command
     public function handle(): int
     {
         $today = Carbon::today();
-        
-        $this->info("Starting recurring invoice generation for: " . $today->toDateString());
+        $dryRun = (bool) $this->option('dry-run');
+
+        $this->info(($dryRun ? '[DRY RUN] ' : '') . "Starting recurring invoice generation for: " . $today->toDateString());
+
+        // A rule whose end date has already passed must never fire again —
+        // deactivate it so it can't linger as a due-looking "active" rule.
+        $expiredRules = RecurringBillingRule::where('status', 'active')
+            ->whereNotNull('end_date')
+            ->where('end_date', '<', $today)
+            ->get();
+
+        foreach ($expiredRules as $rule) {
+            if ($dryRun) {
+                $this->line("[DRY RUN] Would deactivate expired rule: {$rule->name} (Rule ID: {$rule->id}, ended {$rule->end_date->toDateString()})");
+            } else {
+                $rule->update(['status' => 'inactive', 'next_generation_date' => null]);
+                $this->line("Deactivated expired rule: {$rule->name} (Rule ID: {$rule->id}, ended {$rule->end_date->toDateString()})");
+            }
+        }
 
         $rules = RecurringBillingRule::where('status', 'active')
             ->where('next_generation_date', '<=', $today)
@@ -42,7 +60,7 @@ class GenerateRecurringInvoices extends Command
                 $query->whereNull('end_date')
                       ->orWhere('end_date', '>=', $today);
             })
-            ->with('items')
+            ->with(['items', 'client'])
             ->get();
 
         if ($rules->isEmpty()) {
@@ -53,6 +71,27 @@ class GenerateRecurringInvoices extends Command
         $generatedCount = 0;
 
         foreach ($rules as $rule) {
+            // Never invoice into the void: the client account must still
+            // exist (not soft-deleted) and be active.
+            if (! $rule->client || $rule->client->status !== 'active') {
+                $reason = $rule->client ? "client account status is '{$rule->client->status}'" : 'client account is missing/deleted';
+                $this->warn("Skipped rule: {$rule->name} (Rule ID: {$rule->id}) — {$reason}. Deactivate or reassign this rule.");
+                continue;
+            }
+
+            if ($dryRun) {
+                $this->line(sprintf(
+                    '[DRY RUN] Would generate invoice from rule: %s (Rule ID: %d) — client %s, amount %s, next date would advance from %s',
+                    $rule->name,
+                    $rule->id,
+                    $rule->client->name,
+                    $rule->total_amount,
+                    $rule->next_generation_date?->toDateString() ?? $today->toDateString(),
+                ));
+                $generatedCount++;
+                continue;
+            }
+
             try {
                 DB::transaction(function () use ($rule, $today) {
                     // Create invoice
@@ -147,7 +186,9 @@ class GenerateRecurringInvoices extends Command
             }
         }
 
-        $this->info("Completed! Generated {$generatedCount} recurring invoices.");
+        $this->info($dryRun
+            ? "[DRY RUN] Completed! Would generate {$generatedCount} recurring invoices. Nothing was written."
+            : "Completed! Generated {$generatedCount} recurring invoices.");
         return Command::SUCCESS;
     }
 }

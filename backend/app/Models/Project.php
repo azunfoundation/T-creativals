@@ -28,6 +28,7 @@ class Project extends Model
         'budget_amount',
         'completion_percentage',
         'is_recurring',
+        'task_template_id',
     ];
 
     protected function casts(): array
@@ -130,5 +131,11 @@ class Project extends Model
     public function documents(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(ProjectDocument::class);
+    }
+
+    /** The template a recurring project generates its monthly tasks from. */
+    public function taskTemplate(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(TaskTemplate::class, 'task_template_id');
     }
 }

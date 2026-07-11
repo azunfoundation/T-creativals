@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -36,6 +37,12 @@ class User extends Authenticatable
         'last_login_ip',
         'is_client_portal_user',
         'must_change_password',
+        // Client-account billing fields (PRD client spec) — staff rows leave
+        // these null.
+        'company_name',
+        'billing_address',
+        'tax_number',
+        'default_currency_id',
     ];
 
     protected $hidden = [
@@ -101,6 +108,17 @@ class User extends Authenticatable
     public function compensation(): HasOne
     {
         return $this->hasOne(EmployeeCompensation::class)->where('is_current', true);
+    }
+
+    /** Contact persons on a client account (users with the `client` role). */
+    public function clientContacts(): HasMany
+    {
+        return $this->hasMany(ClientContact::class, 'client_id');
+    }
+
+    public function defaultCurrency(): BelongsTo
+    {
+        return $this->belongsTo(Currency::class, 'default_currency_id');
     }
 
     // ─── Scopes ──────────────────────────────────────────────

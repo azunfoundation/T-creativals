@@ -18,8 +18,16 @@ class ClientCommunicationController extends Controller
      * 
      * GET /api/v1/clients/{client}/communications
      */
-    public function index(User $client): JsonResponse
+    public function index(Request $request, User $client): JsonResponse
     {
+        // Communication logs are internal CRM notes about the client — gate on
+        // the Clients module permission. (Previously this controller had NO
+        // authorization at all: any authenticated user, including client
+        // portal accounts, could read every client's logs.)
+        if (!$request->user()->hasPermissionTo('clients.view')) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
         // Confirm user has the client role
         if (!$client->hasRole('client')) {
             return response()->json(['message' => 'Specified user is not a client.'], 400);
@@ -42,6 +50,12 @@ class ClientCommunicationController extends Controller
      */
     public function store(Request $request, User $client): JsonResponse
     {
+        // Anyone who can view clients can log an interaction (sales execs
+        // hold clients.view but not clients.edit).
+        if (!$request->user()->hasPermissionTo('clients.view')) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
         // Confirm user has the client role
         if (!$client->hasRole('client')) {
             return response()->json(['message' => 'Specified user is not a client.'], 400);
@@ -70,8 +84,15 @@ class ClientCommunicationController extends Controller
      * 
      * DELETE /api/v1/clients/{client}/communications/{communication}
      */
-    public function destroy(User $client, ClientCommunication $communication): JsonResponse
+    public function destroy(Request $request, User $client, ClientCommunication $communication): JsonResponse
     {
+        // Deleting history is destructive: clients.edit, or the person who
+        // recorded the log removing their own entry.
+        $actor = $request->user();
+        if (!$actor->hasPermissionTo('clients.edit') && $communication->recorded_by !== $actor->id) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
         if ($communication->client_id !== $client->id) {
             return response()->json(['message' => 'Communication log does not belong to this client.'], 400);
         }

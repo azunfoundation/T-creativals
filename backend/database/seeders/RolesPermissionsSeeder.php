@@ -276,8 +276,11 @@ class RolesPermissionsSeeder extends Seeder
         ]);
 
         // finance: invoices.*, expenses.*, payroll.view, payroll.manage,
-        //          reports.view, reports.export, reports.view_financial
+        //          reports.view, reports.export, reports.view_financial,
+        //          clients.view (finance bills clients — they need the client
+        //          directory to pick who an invoice is for)
         Role::findByName('finance')->syncPermissions([
+            'clients.view',
             'invoices.view',
             'invoices.view_all',
             'invoices.create',

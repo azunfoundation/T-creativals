@@ -38,12 +38,29 @@ class AiController extends Controller
             $query->where('title', 'like', "%{$search}%");
         }
 
+        // Paginated (previously unbounded — flagged in the Production
+        // Readiness audit). Pinned first, then most recently active.
         $conversations = $query->with(['messages' => fn ($q) => $q->latest()->limit(1)])
             ->orderBy('is_pinned', 'desc')
             ->orderBy('updated_at', 'desc')
-            ->get();
+            ->paginate(min((int) $request->input('per_page', 50), 100));
 
         return response()->json($conversations);
+    }
+
+    /**
+     * Honest AI availability for the frontend: `configured` is true only
+     * when a real model can actually be called — otherwise the chat runs in
+     * simulation mode and every AI entry point should say so.
+     * GET /api/v1/ai/status
+     */
+    public function status(): JsonResponse
+    {
+        return response()->json([
+            'enabled' => (bool) config('services.gemini.enabled', true),
+            'configured' => $this->gemini->isConfigured(),
+            'model' => config('services.gemini.model', 'gemini-2.5-flash'),
+        ]);
     }
 
     /**

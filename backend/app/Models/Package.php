@@ -7,7 +7,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Package extends Model
@@ -24,6 +23,8 @@ class Package extends Model
         'slug',
         'description',
         'price',
+        'discount_type',
+        'discount_value',
         'currency_id',
         'billing_cycle',
         'is_active',
@@ -40,6 +41,7 @@ class Package extends Model
         return [
             'currency_id' => 'integer',
             'price' => 'decimal:2',
+            'discount_value' => 'decimal:2',
             'is_active' => 'boolean',
             'is_featured' => 'boolean',
         ];
@@ -53,16 +55,6 @@ class Package extends Model
     public function currency(): BelongsTo
     {
         return $this->belongsTo(Currency::class, 'currency_id');
-    }
-
-    /**
-     * Get the service mappings for this package.
-     *
-     * @return HasMany<PackageService, $this>
-     */
-    public function packageServices(): HasMany
-    {
-        return $this->hasMany(PackageService::class, 'package_id');
     }
 
     /**
