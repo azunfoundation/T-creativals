@@ -117,7 +117,20 @@ Two server blocks — `api.yourdomain.com` → php-fpm (Laravel `public/`), and
 certbot --nginx -d api.yourdomain.com -d app.yourdomain.com
 ```
 
-### 6. Backups
+### 6. Server hardening
+
+- **Firewall / Oracle Cloud security list:** expose only ports 80 and 443 to
+  the internet. Everything else (php-fpm, the Next.js port 3000, database,
+  Reverb 8080) must be reachable only from localhost or the VCN.
+- **SSH:** key-only authentication — set `PasswordAuthentication no` and
+  `PermitRootLogin prohibit-password` in `sshd_config`. If your team has
+  stable egress IPs, restrict port 22 to those IPs in the security list.
+- **Known-public IP:** the original server IP (`140.245.231.188`) appears in
+  this repository's git history and must be treated as public. Assume it is
+  being scanned: keep the firewall rules above in place, or move the
+  deployment to a fresh reserved public IP.
+
+### 7. Backups
 
 - Nightly database dump (`mysqldump` or a copy of the SQLite file) retained
   off-server.
@@ -125,7 +138,7 @@ certbot --nginx -d api.yourdomain.com -d app.yourdomain.com
 - In-app: Settings → Backups & Recovery can create/restore database backups,
   and soft-deleted records are founder-restorable from the Recovery Bin.
 
-### 7. First login
+### 8. First login
 
 Seeded founder account (change the password immediately):
 `founder@creativals.com`. Manage team accounts under Users, client accounts

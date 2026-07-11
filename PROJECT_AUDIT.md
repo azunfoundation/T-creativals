@@ -3388,3 +3388,19 @@ payroll, and settings surfaces. Deferred items, recorded honestly:
   no frontend surface.
 - **Recurring monthly task assignment** — generated tasks are unassigned;
   per-template-item auto-assignment is a refinement.
+
+### RC1 addendum (2026-07-11) — release decisions
+
+- **Leaked server IP: rotate, not scrub.** The initial commit `b6a7a0b`
+  (pushed to GitHub) contains the real server IP in
+  `docker/nginx/oracle-cloud.conf`. Decision: treat the IP as public and
+  harden/rotate the server (see README → "Server hardening") rather than
+  rewrite published git history. The working tree was scrubbed in
+  `a6009ff`; history is intentionally left intact.
+- **Recurring rule data fix.** Seeded rule #2 ("Weekly Support Plan") had
+  `tax_amount` 3600 where the correct figure is 360 (subtotal 2000 @ 18% =
+  total 2360; the line item already said 360). Corrected via an Eloquent
+  update on 2026-07-11 before the scheduler could copy the bad figure into
+  a generated invoice. Rule #1 verified consistent (15000 + 2700 = 17700).
+- **Gate at tag `v1.0.0-rc1`:** 222/222 tests, 1,028 assertions; `tsc`
+  clean; `next build` green; 269 routes; 5 scheduled commands.
