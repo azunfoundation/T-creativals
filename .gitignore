@@ -6,3 +6,11 @@ composer
 .claude/
 
 user_inputs.txt
+
+# Local verification/perf scratch artifacts
+.perf-baseline.ps1
+.perf.txt
+.verify-phase3.ps1
+.local-verify.txt
+.phase3-verify.txt
+.frontend_home.html

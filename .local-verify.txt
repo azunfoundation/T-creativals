@@ -1,5 +1,0 @@
-=== Verification run Wed 07/08/2026 13:12:10.71 ===
-FRONTEND http://localhost:3000 status=000 time=2.251235s
-BACKEND  http://localhost:8000 status=200 time=5.470084s
-API      http://localhost:8000/api/v1/health status=404
-Saved frontend HTML snapshot to .frontend_home.html
