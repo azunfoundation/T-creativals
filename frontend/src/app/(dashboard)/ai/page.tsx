@@ -15,6 +15,7 @@ import VoiceAgentModal from '@/components/ai/VoiceAgentModal';
 import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 const AI_HOWTO = {
   overview: 'Antigravity AI is the built-in assistant. You chat with it in plain English and it can answer questions about your company data — leads, tasks, invoices, projects — and take actions for you, like creating a task or drafting a record. You can also attach files for analysis or talk to it live with AI Voice Call.',
@@ -240,6 +241,7 @@ export default function AiPage() {
   const { showToast } = useToast();
 
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [convToDelete, setConvToDelete] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [inputText, setInputText] = useState('');
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
@@ -253,13 +255,21 @@ export default function AiPage() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Queries
-  const { data: conversations = [], isLoading: loadingConversations } = useQuery({
+  const { data: aiStatus } = useQuery({
+    queryKey: ['ai_status'],
+    queryFn: async () => (await aiApi.status()).data,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: conversationsPage, isLoading: loadingConversations } = useQuery({
     queryKey: ['ai_conversations', searchQuery],
     queryFn: async () => {
       const res = await aiApi.listConversations(searchQuery);
       return res.data;
     }
   });
+  const conversations = conversationsPage?.data || [];
+  const hasMoreConversations = (conversationsPage?.last_page || 1) > 1;
 
   const { data: activeConversation, isLoading: loadingMessages } = useQuery({
     queryKey: ['ai_conversation', activeConversationId],
@@ -690,7 +700,7 @@ export default function AiPage() {
                       <Bookmark size={13} fill={conv.is_saved ? 'var(--accent)' : 'none'} />
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteConvMutation.mutate(conv.id); }}
+                      onClick={(e) => { e.stopPropagation(); setConvToDelete(conv.id); }}
                       title="Delete Conversation"
                       style={{ color: 'var(--danger)', padding: '2px' }}
                       className="opacity-0 group-hover:opacity-100"
@@ -701,6 +711,11 @@ export default function AiPage() {
                 </div>
               );
             })
+          )}
+          {hasMoreConversations && (
+            <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.5rem' }}>
+              Showing your 50 most recent chats — use search to find older ones.
+            </p>
           )}
         </div>
       </aside>
@@ -731,9 +746,26 @@ export default function AiPage() {
                 }} />
               </h2>
               <p style={{ fontSize: '0.6875rem', color: chatMutation.isPending ? 'var(--accent)' : 'var(--text-muted)', marginTop: '2px', fontWeight: chatMutation.isPending ? 600 : 400 }}>
-                {chatMutation.isPending ? '● Thinking…' : '● AI Operating Assistant'}
+                {chatMutation.isPending
+                  ? '● Thinking…'
+                  : aiStatus && !aiStatus.configured
+                    ? '● Simulation mode — no AI model connected'
+                    : '● AI Operating Assistant'}
               </p>
             </div>
+
+            {aiStatus && !aiStatus.configured && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: '0.6875rem', fontWeight: 600,
+                padding: '0.25rem 0.625rem', borderRadius: 999,
+                background: 'var(--warning-subtle)', color: 'var(--warning)',
+                border: '1px solid rgba(245,158,11,0.25)',
+              }}>
+                Simulation mode
+                <HelpIcon text="No AI API key is configured on the server, so replies here are canned demonstrations — not a real model reading your data. Ask your administrator to set GEMINI_API_KEY to enable the real assistant." size={11} />
+              </span>
+            )}
             
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <HowToUseGuide moduleKey="ai-assistant" title="How the AI Assistant Works" content={AI_HOWTO} />
@@ -1062,6 +1094,18 @@ export default function AiPage() {
           </div>
         )}
       </section>
+
+      {convToDelete !== null && (
+        <ConfirmModal
+          title="Delete Conversation"
+          message="Delete this chat and its full message history? This cannot be undone."
+          confirmLabel="Delete Chat"
+          cancelLabel="Cancel"
+          danger={true}
+          onConfirm={() => { deleteConvMutation.mutate(convToDelete); setConvToDelete(null); }}
+          onCancel={() => setConvToDelete(null)}
+        />
+      )}
 
       {/* ── Voice Call overlay modal ── */}
       {isVoiceOpen && (

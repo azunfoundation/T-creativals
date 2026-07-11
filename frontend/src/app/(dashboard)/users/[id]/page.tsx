@@ -168,10 +168,16 @@ export default function UserProfilePage() {
       </div>
 
       {activeTab === 'profile' && (
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
           <p>Email: {user.email}</p>
           <p>Employee ID: {user.employee_id || 'N/A'}</p>
           <p>Phone: {user.phone || 'N/A'}</p>
+          <p>Roles: {(user.roles || []).map(r => r.display_name || r.name).join(', ') || 'None'}</p>
+          <p>Departments: {(user.departments || []).map(d => d.name).join(', ') || 'None'}</p>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            Reports To: {(user.managers || []).map(m => m.name).join(', ') || 'No reporting line set'}
+            <HelpIcon text="This person's manager(s). Set from the pencil (edit) icon on the User Management page — multiple managers are supported." size={12} />
+          </p>
         </div>
       )}
 

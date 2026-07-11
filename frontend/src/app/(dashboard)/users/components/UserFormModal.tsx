@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { X, Eye, EyeOff, MailPlus, CheckCircle } from 'lucide-react';
 import { users as usersApi, getApiErrorMessage } from '@/lib/api';
 import type { User, Role, Department } from '@/lib/api';
@@ -11,6 +11,8 @@ interface UserFormModalProps {
   user: User | null;
   roles: Role[];
   departments: Department[];
+  /** Staff directory for the "Reports To" picker (client accounts excluded by the caller). */
+  allUsers: User[];
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -24,6 +26,7 @@ interface FormState {
   status: 'active' | 'inactive';
   role_ids: number[];
   department_ids: number[];
+  manager_ids: number[];
 }
 
 const DEFAULT_FORM: FormState = {
@@ -35,9 +38,10 @@ const DEFAULT_FORM: FormState = {
   status: 'active',
   role_ids: [],
   department_ids: [],
+  manager_ids: [],
 };
 
-export default function UserFormModal({ user, roles, departments, onClose, onSuccess }: UserFormModalProps) {
+export default function UserFormModal({ user, roles, departments, allUsers, onClose, onSuccess }: UserFormModalProps) {
   const isEdit = user !== null;
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [showPassword, setShowPassword] = useState(false);
@@ -46,6 +50,17 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
   // enabling the "Resend Welcome Email" action instead of a dead end.
   const [existingUserId, setExistingUserId] = useState<number | null>(null);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+
+  // The list payload doesn't carry reporting lines — fetch the full record
+  // so the "Reports To" picker prefills with the user's current managers.
+  const { data: fullUser } = useQuery({
+    queryKey: ['user', user?.id, 'form-prefill'],
+    queryFn: async () => {
+      const res = await usersApi.show(user!.id);
+      return res.data as unknown as User;
+    },
+    enabled: !!user,
+  });
 
   // Pre-fill for edit
   useEffect(() => {
@@ -59,11 +74,12 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
         status: user.status,
         role_ids: user.roles.map((r) => r.id),
         department_ids: user.departments.map((d) => d.id),
+        manager_ids: (fullUser?.managers || []).map((m) => m.id),
       });
     } else {
       setForm(DEFAULT_FORM);
     }
-  }, [user]);
+  }, [user, fullUser]);
 
   const createMutation = useMutation({
     mutationFn: (data: FormState) =>
@@ -76,6 +92,7 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
         status: data.status,
         role_ids: data.role_ids,
         department_ids: data.department_ids,
+        manager_ids: data.manager_ids,
       }),
     onSuccess,
     onError: (err: unknown) => {
@@ -117,6 +134,7 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
         status: data.status,
         role_ids: data.role_ids,
         department_ids: data.department_ids,
+        manager_ids: data.manager_ids,
       }),
     onSuccess,
     onError: (err: unknown) => {
@@ -167,6 +185,21 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
         : [...p.department_ids, id],
     }));
   };
+
+  const toggleManager = (id: number) => {
+    setForm((p) => ({
+      ...p,
+      manager_ids: p.manager_ids.includes(id)
+        ? p.manager_ids.filter((m) => m !== id)
+        : [...p.manager_ids, id],
+    }));
+  };
+
+  // Staff who can be picked as a manager: active, not a client portal
+  // account, and not the person being edited (no self-reporting).
+  const managerOptions = allUsers.filter(
+    (u) => u.status === 'active' && !(u as any).is_client_portal_user && u.id !== user?.id
+  );
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
@@ -417,6 +450,47 @@ export default function UserFormModal({ user, roles, departments, onClose, onSuc
                       style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
                     />
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{dept.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Reports To (many-to-many reporting lines, PRD) */}
+            <div>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                Reports To
+                <HelpIcon text="The manager(s) this person reports to — more than one is fine (e.g. a designer reporting to both a Team Lead and a Project Manager). The first one ticked is treated as the primary reporting line." />
+              </label>
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 150, overflowY: 'auto',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.375rem',
+              }}>
+                {managerOptions.length === 0 ? (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.375rem' }}>
+                    No other active staff to report to yet.
+                  </span>
+                ) : managerOptions.map((m) => (
+                  <label
+                    key={m.id}
+                    htmlFor={`manager-${m.id}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '0.375rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'background 0.1s ease',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    <input
+                      type="checkbox"
+                      id={`manager-${m.id}`}
+                      checked={form.manager_ids.includes(m.id)}
+                      onChange={() => toggleManager(m.id)}
+                      style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
+                    />
+                    <span style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{m.name}</span>
+                    {form.manager_ids[0] === m.id && (
+                      <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--accent)' }}>PRIMARY</span>
+                    )}
                   </label>
                 ))}
               </div>

@@ -116,6 +116,8 @@ export interface User {
   roles: Role[];
   permissions: string[];
   departments: Department[];
+  /** Reporting lines (many-to-many, PRD). Empty unless the endpoint loaded them (users show/update do). */
+  managers?: Array<{ id: number; name: string }>;
   avatar_url: string | null;
   status: 'active' | 'inactive';
   employee_id?: string;
@@ -346,6 +348,9 @@ export const auth = {
 
   logout: () => api.post('/auth/logout'),
 
+  /** Revokes every session token for the current user (all devices). */
+  logoutAll: () => api.post('/auth/logout-all'),
+
   me: () => api.get<User>('/auth/me'),
 
   forgotPassword: (email: string) =>
@@ -383,6 +388,8 @@ export interface CreateUserData {
   status?: string;
   role_ids?: number[];
   department_ids?: number[];
+  /** Reporting lines — ids of the managers this user reports to (first = primary). */
+  manager_ids?: number[];
   is_client_portal_user?: boolean;
 }
 
@@ -394,6 +401,8 @@ export interface UpdateUserData {
   status?: string;
   role_ids?: number[];
   department_ids?: number[];
+  /** Reporting lines — ids of the managers this user reports to (first = primary). */
+  manager_ids?: number[];
   is_client_portal_user?: boolean;
 }
 
@@ -626,8 +635,17 @@ export interface Package {
   id: number;
   name: string;
   description?: string;
+  /** The final bundled price actually charged (source of truth). */
+  price?: number | string;
+  /**
+   * How `price` was arrived at. Persisted since the Services module audit —
+   * null on legacy rows, for which the UI derives a fixed-amount display.
+   */
   discount_type: 'percentage' | 'fixed';
   discount_value: number;
+  currency_id?: number;
+  billing_cycle?: string;
+  is_active?: boolean;
   services?: Service[];
   service_ids?: number[];
   created_at?: string;
@@ -888,10 +906,8 @@ export interface Payment {
   updated_at: string;
 }
 
-// Note: the backend does not currently expose an `approvals` array on
-// InvoiceResource (InvoiceApproval only stores action/actor_id/notes, not the
-// richer step/status shape QuoteApproval has). This type is kept for any
-// future/optional backend addition but is not populated by invoicesApi.get().
+// The invoice detail endpoint exposes `approvals` (with actor + notes)
+// for the approval-history timeline.
 export interface InvoiceApproval {
   id: number;
   invoice_id: number;
@@ -1035,8 +1051,9 @@ export const invoices = {
 export const payments = {
   list: (params?: PaymentListParams) =>
     api.get<{ data: Payment[]; meta: PaginationMeta }>('/payments', { params }),
-  get: (id: number) => api.get<Payment>(`/payments/${id}`),
-  // There is no POST /payments route — payments are recorded against an invoice.
+  // There is no GET /payments/{id} route — nothing needs a single-payment
+  // fetch (decided in the cross-cutting audit). There is also no POST
+  // /payments route — payments are recorded against an invoice.
   create: (data: CreatePaymentData) =>
     api.post<Payment>(`/invoices/${data.invoice_id}/payments`, data),
   delete: (id: number) => api.delete(`/payments/${id}`),
@@ -1077,6 +1094,9 @@ export interface Project {
   budget_amount?: number;
   description?: string;
   members?: ProjectMember[];
+  /** Retainer flag - recurring projects can link a task template for monthly auto-generation. */
+  is_recurring?: boolean;
+  task_template_id?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -1594,6 +1614,8 @@ export interface PortalProject {
   milestones_count: number;
   tasks_count: number;
   budget_used_hours: number;
+  /** The client's account manager — loaded on the portal project detail endpoint. */
+  manager?: { id: number; name: string; email?: string } | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -2015,9 +2037,26 @@ export interface ClientReportData {
   breakdown: ClientReportRow[];
 }
 
+export interface DashboardBriefing {
+  briefing: string;
+  recommendations: string[];
+  /**
+   * 'ai' — a real model wrote the text; 'system' — the metrics-derived
+   * fallback template (AI disabled, keyless, or the call failed). The UI must
+   * label these differently and never present 'system' text as model output.
+   */
+  source: 'ai' | 'system';
+  generated_at: string;
+}
+
 export const reports = {
   getDashboardSummary: () =>
     api.get<any>('/reports/dashboard'),
+
+  // Separate endpoint so the dashboard's core data never waits on an external
+  // AI call. Requires reports.view_financial (403 otherwise).
+  getDashboardBriefing: () =>
+    api.get<DashboardBriefing>('/reports/dashboard/briefing'),
 
   getRevenue: (params?: ReportParams) =>
     api.get<RevenueReportData>('/reports/revenue', { params }),
@@ -2327,7 +2366,7 @@ export interface NotificationPreferenceItem {
 
 export const notificationPreferences = {
   get: () => api.get<NotificationPreferenceItem[]>('/settings/notifications'),
-  update: (preferences: Array<{ event_type: string; email: boolean }>) =>
+  update: (preferences: Array<{ event_type: string; email: boolean; in_app?: boolean }>) =>
     api.put<{ message: string; data: NotificationPreferenceItem[] }>('/settings/notifications', { preferences }),
 };
 
@@ -2354,7 +2393,145 @@ export const filesApi = {
   },
 };
 
+export interface ClientContact {
+  id: number;
+  client_id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  designation?: string | null;
+  is_primary: boolean;
+}
+
+export interface ClientDirectoryRow extends ClientReportRow {
+  company_name?: string | null;
+}
+
+export interface ClientDirectoryData {
+  summary: {
+    total_clients: number;
+    total_active: number;
+    total_billed: number;
+    total_collected: number;
+    total_outstanding: number;
+  };
+  breakdown: ClientDirectoryRow[];
+}
+
+export interface ClientProjectRow {
+  id: number;
+  project_number: string;
+  name: string;
+  status: string;
+  completion_percentage: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  budget_amount?: number | null;
+}
+
+export interface ClientInvoiceRow {
+  id: number;
+  invoice_number: string;
+  title?: string | null;
+  status: string;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+  exchange_rate: number;
+  issue_date?: string | null;
+  due_date?: string | null;
+}
+
+export interface ClientQuoteRow {
+  id: number;
+  quote_number: string;
+  status: string;
+  total_amount: number;
+  created_at: string;
+  valid_until?: string | null;
+}
+
+export interface ClientDetail {
+  client: {
+    id: number;
+    name: string;
+    company_name?: string | null;
+    email: string;
+    phone?: string | null;
+    status: 'active' | 'inactive' | 'suspended';
+    is_client_portal_user: boolean;
+    billing_address?: string | null;
+    tax_number?: string | null;
+    default_currency?: { id: number; code: string; symbol?: string; name?: string } | null;
+    last_login_at?: string | null;
+    created_at?: string | null;
+  };
+  contacts: ClientContact[];
+  projects: {
+    active: ClientProjectRow[];
+    pipeline: ClientProjectRow[];
+    closed: ClientProjectRow[];
+    total_count: number;
+  };
+  invoices: { items: ClientInvoiceRow[]; total_count: number };
+  quotes: { items: ClientQuoteRow[]; total_count: number };
+  totals: { total_billed: number; total_paid: number; total_outstanding: number };
+  revenue_history: Array<{ month_key: string; month_name: string; billed: number; collected: number }>;
+  health: {
+    score: number;
+    components: {
+      overdue_invoices: number;
+      overdue_penalty: number;
+      on_hold_projects: number;
+      on_hold_penalty: number;
+      cancelled_projects: number;
+      cancelled_penalty: number;
+      outstanding_penalty: number;
+    };
+  };
+}
+
+export interface ClientUpdatePayload {
+  name?: string;
+  company_name?: string | null;
+  email?: string;
+  phone?: string | null;
+  status?: 'active' | 'inactive' | 'suspended';
+  is_client_portal_user?: boolean;
+  billing_address?: string | null;
+  tax_number?: string | null;
+  default_currency_id?: number | null;
+}
+
+// The Clients module's own endpoints, gated on clients.* permissions —
+// unlike reports/clients (reports.*) and /users (users.*), these work for
+// the sales roles the module is built for.
 export const clientsApi = {
+  // GET /clients returns {summary, breakdown} with no `data` key, so the
+  // global interceptor passes it through untouched.
+  list: () => api.get<ClientDirectoryData>('/clients'),
+
+  show: (clientId: number) => api.get<ClientDetail>(`/clients/${clientId}`),
+
+  create: (data: {
+    name: string; company_name?: string; email: string; password: string;
+    phone?: string; billing_address?: string; tax_number?: string; default_currency_id?: number;
+  }) => api.post<{ message: string; data: { id: number } }>('/clients', data),
+
+  update: (clientId: number, data: ClientUpdatePayload) =>
+    api.put(`/clients/${clientId}`, data),
+
+  delete: (clientId: number) => api.delete(`/clients/${clientId}`),
+
+  createContact: (clientId: number, data: { name: string; email?: string; phone?: string; designation?: string; is_primary?: boolean }) =>
+    api.post<{ message: string; data: ClientContact }>(`/clients/${clientId}/contacts`, data),
+
+  updateContact: (clientId: number, contactId: number, data: Partial<{ name: string; email: string; phone: string; designation: string; is_primary: boolean }>) =>
+    api.put(`/clients/${clientId}/contacts/${contactId}`, data),
+
+  deleteContact: (clientId: number, contactId: number) =>
+    api.delete(`/clients/${clientId}/contacts/${contactId}`),
+
   listCommunications: (clientId: number) =>
     api.get<ClientCommunication[]>(`/clients/${clientId}/communications`),
 
@@ -2363,6 +2540,49 @@ export const clientsApi = {
 
   deleteCommunication: (clientId: number, id: number) =>
     api.delete(`/clients/${clientId}/communications/${id}`),
+};
+
+// ============================================================
+// Task Templates (PRD: service templates + recurring projects)
+// ============================================================
+
+export interface TaskTemplateItem {
+  id: number;
+  template_id: number;
+  title: string;
+  description?: string | null;
+  estimated_hours?: number | string | null;
+  sort_order: number;
+}
+
+export interface TaskTemplate {
+  id: number;
+  name: string;
+  description?: string | null;
+  estimated_hours?: number | string | null;
+  items: TaskTemplateItem[];
+  items_count?: number;
+  created_at?: string;
+}
+
+export interface TaskTemplateItemPayload {
+  title: string;
+  description?: string;
+  estimated_hours?: number;
+}
+
+export const taskTemplatesApi = {
+  list: () => api.get<TaskTemplate[]>('/task-templates'),
+  create: (data: { name: string; description?: string; items: TaskTemplateItemPayload[] }) =>
+    api.post<{ message: string; data: TaskTemplate }>('/task-templates', data),
+  update: (id: number, data: { name?: string; description?: string; items?: TaskTemplateItemPayload[] }) =>
+    api.put(`/task-templates/${id}`, data),
+  delete: (id: number) => api.delete(`/task-templates/${id}`),
+  applyToProject: (projectId: number, templateId: number, setAsRecurring = false) =>
+    api.post<{ message: string; data: { created_count: number } }>(`/projects/${projectId}/apply-template`, {
+      template_id: templateId,
+      set_as_recurring_template: setAsRecurring,
+    }),
 };
 
 // ============================================================
@@ -2405,7 +2625,18 @@ export interface AiAutomation {
   conditions: any[];
   actions: any[];
   is_active: boolean;
+  /** Honest activity trail — when this rule last actually fired, and how often. */
+  last_triggered_at?: string | null;
+  trigger_count?: number;
   created_at: string;
+}
+
+export interface AiStatus {
+  /** Feature flag (config) — when false, AI features are switched off entirely. */
+  enabled: boolean;
+  /** True only when a real model can be called; false = simulation mode. */
+  configured: boolean;
+  model: string;
 }
 
 export interface AiActionConfirmation {
@@ -2421,8 +2652,12 @@ export interface AiChatResponse {
 }
 
 export const aiApi = {
-  listConversations: (search?: string) =>
-    api.get<AiConversation[]>('/ai/conversations', { params: { search } }),
+  // Paginated (pinned first, then most recent). The paginator envelope
+  // carries current_page, so the interceptor keeps it intact.
+  listConversations: (search?: string, page = 1, perPage = 50) =>
+    api.get<LaravelPaginatedResponse<AiConversation>>('/ai/conversations', { params: { search, page, per_page: perPage } }),
+
+  status: () => api.get<AiStatus>('/ai/status'),
 
   createConversation: (title: string) =>
     api.post<AiConversation>('/ai/conversations', { title }),

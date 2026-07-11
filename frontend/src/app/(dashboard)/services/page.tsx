@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { services as servicesApi, serviceCategories as categoriesApi, packages as packagesApi, getApiErrorMessage } from '@/lib/api';
+import { services as servicesApi, serviceCategories as categoriesApi, packages as packagesApi, platformSettings, getApiErrorMessage } from '@/lib/api';
 import type { Service, ServiceCategory, Package } from '@/lib/api';
-import { Plus, Edit2, Trash2, X, Package as PackageIcon, Percent, Layers, Tag, Check, HelpCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Package as PackageIcon, Percent, Layers, Tag, Check, HelpCircle, AlertCircle } from 'lucide-react';
+import { useAuthStore } from '@/store/auth';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
@@ -27,7 +28,7 @@ const SERVICES_HOWTO = {
       items: [
         'A service’s Base Price is the pre-tax price for one unit (one hour, one month, one post…). GST is added on top when it is quoted or invoiced.',
         'A package starts at the sum of its services’ base prices; your discount is applied into a single final "Bundled Special" price.',
-        'After saving a package, the discount redisplays as the fixed amount saved off the total base price.',
+        'The discount saves exactly as you set it \u2014 a 15% discount still reads 15% when you reopen the package.',
         'Use the category filter chips at the top of the Services tab to jump straight to one category.',
       ],
     },
@@ -53,6 +54,10 @@ const SERVICES_HOWTO = {
 export default function ServicesPage() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  // services.manage is what the backend checks on every create/edit/delete —
+  // without it the buttons would only ever 403.
+  const canManage = (user?.permissions || []).includes('services.manage');
   const [activeTab, setActiveTab] = useState<'services' | 'packages'>('services');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'all'>('all');
 
@@ -66,59 +71,62 @@ export default function ServicesPage() {
   const [packageDeleteConfirm, setPackageDeleteConfirm] = useState<number | null>(null);
 
   // Queries
-  const { data: categories = [] } = useQuery<ServiceCategory[]>({
+  const { data: categories = [], isError: isCategoriesError } = useQuery<ServiceCategory[]>({
     queryKey: ['service-categories'],
     queryFn: async () => {
-      try {
-        const res = await categoriesApi.list();
-        return res.data || [];
-      } catch {
-        return [];
-      }
+      const res = await categoriesApi.list();
+      return res.data || [];
     },
   });
 
-  const { data: rawServices = [] } = useQuery<Service[]>({
+  const { data: rawServices = [], isError: isServicesError } = useQuery<Service[]>({
     queryKey: ['services'],
     queryFn: async () => {
-      try {
-        const res = await servicesApi.list();
-        const data = res.data || [];
-        return data.map((s: any) => ({
+      const res = await servicesApi.list();
+      const data = res.data || [];
+      return data.map((s: any) => ({
+        ...s,
+        base_price: s.base_price ?? (s.default_price !== undefined ? Number(s.default_price) : 0),
+      }));
+    },
+  });
+
+  // Default currency for new packages — the platform's configured default,
+  // not a hardcoded id guess.
+  const { data: settings } = useQuery({
+    queryKey: ['platform_settings'],
+    queryFn: async () => (await platformSettings.get()).data,
+  });
+  const defaultCurrencyId = (settings?.currencies || []).find(c => c.is_default)?.id
+    ?? (settings?.currencies || [])[0]?.id
+    ?? null;
+
+  const { data: packagesList = [], isError: isPackagesError } = useQuery<Package[]>({
+    queryKey: ['packages'],
+    queryFn: async () => {
+      const res = await packagesApi.list();
+      const data = res.data || [];
+      return data.map((pkg: any) => {
+        const services = (pkg.services || []).map((s: any) => ({
           ...s,
           base_price: s.base_price ?? (s.default_price !== undefined ? Number(s.default_price) : 0),
         }));
-      } catch {
-        return [];
-      }
+        const totalBase = services.reduce((sum: number, s: any) => sum + s.base_price, 0);
+        const finalPrice = pkg.price !== undefined ? Number(pkg.price) : totalBase;
+        // Discounts persist for real now; rows saved before that carry a
+        // NULL discount_type, for which we derive a fixed-amount display.
+        const hasStoredDiscount = pkg.discount_type === 'percentage' || pkg.discount_type === 'fixed';
+        return {
+          ...pkg,
+          services,
+          discount_type: hasStoredDiscount ? pkg.discount_type : 'fixed',
+          discount_value: hasStoredDiscount ? Number(pkg.discount_value || 0) : Math.max(0, totalBase - finalPrice),
+        };
+      });
     },
   });
 
-  const { data: packagesList = [] } = useQuery<Package[]>({
-    queryKey: ['packages'],
-    queryFn: async () => {
-      try {
-        const res = await packagesApi.list();
-        const data = res.data || [];
-        return data.map((pkg: any) => {
-          const services = (pkg.services || []).map((s: any) => ({
-            ...s,
-            base_price: s.base_price ?? (s.default_price !== undefined ? Number(s.default_price) : 0),
-          }));
-          const totalBase = services.reduce((sum: number, s: any) => sum + s.base_price, 0);
-          const finalPrice = pkg.price !== undefined ? Number(pkg.price) : totalBase;
-          return {
-            ...pkg,
-            services,
-            discount_type: 'fixed',
-            discount_value: Math.max(0, totalBase - finalPrice),
-          };
-        });
-      } catch {
-        return [];
-      }
-    },
-  });
+  const loadError = isCategoriesError || isServicesError || isPackagesError;
 
   // Service Mutations
   const deleteServiceMutation = useMutation({
@@ -177,7 +185,7 @@ export default function ServicesPage() {
         </div>
         <div className="flex gap-2">
           <HowToUseGuide moduleKey="services" title="How the Service Catalog Works" content={SERVICES_HOWTO} />
-          {activeTab === 'services' ? (
+          {canManage && (activeTab === 'services' ? (
             <button
               id="new-service-btn"
               onClick={() => { setEditService(null); setServiceModalOpen(true); }}
@@ -193,9 +201,20 @@ export default function ServicesPage() {
             >
               <Plus size={16} /> New Package
             </button>
-          )}
+          ))}
         </div>
       </div>
+
+      {loadError && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          background: 'var(--danger-subtle)', border: '1px solid var(--danger)', color: 'var(--danger)',
+          borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', fontSize: '0.8125rem',
+        }}>
+          <AlertCircle size={16} />
+          Couldn't load part of the catalog. What you see below may be incomplete — refresh to retry.
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b" style={{ gap: '1.5rem', marginBottom: '1.5rem' }}>
@@ -338,6 +357,7 @@ export default function ServicesPage() {
 
                         {/* Card Hover Actions */}
                         <div className="card-actions">
+                          {canManage && (<>
                           <button
                             id={`edit-service-${service.id}`}
                             onClick={() => { setEditService(service); setServiceModalOpen(true); }}
@@ -364,6 +384,7 @@ export default function ServicesPage() {
                           >
                             <Trash2 size={13} />
                           </button>
+                          </>)}
                         </div>
                       </div>
                     ))}
@@ -400,15 +421,16 @@ export default function ServicesPage() {
             >
               {packagesList.map((pkg) => {
                 const totalBase = (pkg.services || []).reduce((sum, s) => sum + s.base_price, 0);
-                let discountText = '';
-                let finalVal = totalBase;
-                if (pkg.discount_type === 'percentage') {
-                  discountText = `${pkg.discount_value}% Off`;
-                  finalVal = totalBase * (1 - pkg.discount_value / 100);
-                } else {
-                  discountText = `${formatCurrency(pkg.discount_value)} Off`;
-                  finalVal = Math.max(0, totalBase - pkg.discount_value);
-                }
+                const discountText = pkg.discount_type === 'percentage'
+                  ? `${pkg.discount_value}% Off`
+                  : `${formatCurrency(pkg.discount_value)} Off`;
+                // The stored final price is the source of truth — the
+                // discount fields describe how it was arrived at.
+                const finalVal = (pkg as any).price !== undefined
+                  ? Number((pkg as any).price)
+                  : (pkg.discount_type === 'percentage'
+                      ? totalBase * (1 - pkg.discount_value / 100)
+                      : Math.max(0, totalBase - pkg.discount_value));
 
                 return (
                   <div
@@ -439,6 +461,7 @@ export default function ServicesPage() {
                           </span>
                         </div>
                         <div className="pkg-actions">
+                          {canManage && (<>
                           <button
                             id={`edit-pkg-${pkg.id}`}
                             onClick={() => { setEditPackage(pkg); setPackageModalOpen(true); }}
@@ -465,6 +488,7 @@ export default function ServicesPage() {
                           >
                             <Trash2 size={13} />
                           </button>
+                          </>)}
                         </div>
                       </div>
 
@@ -571,6 +595,7 @@ export default function ServicesPage() {
         <PackageFormModal
           pkg={editPackage}
           servicesList={rawServices}
+          defaultCurrencyId={defaultCurrencyId}
           onClose={() => setPackageModalOpen(false)}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['packages'] });
@@ -841,11 +866,13 @@ interface PackageForm {
 function PackageFormModal({
   pkg,
   servicesList,
+  defaultCurrencyId,
   onClose,
   onSuccess,
 }: {
   pkg: Package | null;
   servicesList: Service[];
+  defaultCurrencyId: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -918,7 +945,11 @@ function PackageFormModal({
       name: form.name,
       description: form.description,
       price,
-      currency_id: 1, // Default to INR
+      // The discount model persists now — a percentage package reloads as a
+      // percentage instead of being rewritten as a fixed amount.
+      discount_type: form.discount_type,
+      discount_value: form.discount_value,
+      currency_id: (pkg as any)?.currency_id ?? defaultCurrencyId ?? 1,
       billing_cycle: 'one_time',
       is_active: true,
       is_featured: false,
@@ -992,7 +1023,7 @@ function PackageFormModal({
             <div className="form-group">
               <label className="form-label text-xs font-semibold text-secondary mb-1.5 flex items-center gap-1">
                 Discount Model
-                <HelpIcon text="Take a % off or a fixed INR amount off the combined base price. The discount is applied into the final package price — when you reopen the package it redisplays as the fixed amount saved." />
+                <HelpIcon text="Take a % off or a fixed INR amount off the combined base price. Both the discount and the resulting final price are saved — reopening the package shows exactly what you set here." />
               </label>
               <select
                 value={form.discount_type}

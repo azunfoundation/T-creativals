@@ -265,6 +265,14 @@ export default function AiAutomationsPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Honest activity trail — proof the rule actually runs */}
+                <p style={{ fontSize: '0.6875rem', color: (auto.trigger_count || 0) > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {(auto.trigger_count || 0) > 0 && auto.last_triggered_at
+                    ? `Ran ${auto.trigger_count} time${(auto.trigger_count || 0) > 1 ? 's' : ''} · last on ${new Date(auto.last_triggered_at).toLocaleString()}`
+                    : 'Has not fired yet — it runs the next time its trigger event happens.'}
+                  <HelpIcon text="Updated every time this rule's trigger event occurs AND its conditions match. If it never fires, check that the condition field/value matches real records (e.g. status values are lowercase like 'completed')." size={11} />
+                </p>
               </div>
 
               {/* Status toggles & actions */}

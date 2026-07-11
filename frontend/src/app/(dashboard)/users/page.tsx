@@ -470,6 +470,7 @@ export default function UsersPage() {
           user={editUser}
           roles={rolesData || []}
           departments={deptsData || []}
+          allUsers={displayUsers}
           onClose={handleCloseModal}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['users'] });

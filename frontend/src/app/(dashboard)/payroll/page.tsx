@@ -250,6 +250,20 @@ export default function PayrollDashboard() {
     onError: (err: unknown) => showToast(getApiErrorMessage(err, 'Failed to save compensation.'), 'error'),
   });
 
+  // In-place correction — fixes a data-entry mistake on the CURRENT record
+  // without opening a new versioned entry (the endpoint has existed since
+  // the Payroll audit; this is its first UI).
+  const correctCompensationMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      employeeCompensationApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employee-compensations'] });
+      setShowCompensationModal(false);
+      showToast('Entry corrected — no new salary version was created.', 'success');
+    },
+    onError: (err: unknown) => showToast(getApiErrorMessage(err, 'Failed to correct the entry.'), 'error'),
+  });
+
   const createBonusMutation = useMutation({
     mutationFn: bonusApi.create,
     onSuccess: () => {
@@ -319,7 +333,14 @@ export default function PayrollDashboard() {
     effective_from: new Date().toISOString().slice(0, 10),
   });
 
+  // When opened from an existing row the modal offers two save modes:
+  // a new versioned record (pay change) or an in-place correction (typo fix).
+  const [compEditTarget, setCompEditTarget] = useState<EmployeeCompensation | null>(null);
+  const [compMode, setCompMode] = useState<'new' | 'correct'>('new');
+
   const openCompensationModal = (existing?: EmployeeCompensation) => {
+    setCompEditTarget(existing ?? null);
+    setCompMode('new');
     setCompForm({
       user_id: existing ? String(existing.user_id) : '',
       compensation_type_id: existing ? String(existing.compensation_type_id) : '',
@@ -339,6 +360,22 @@ export default function PayrollDashboard() {
     e.preventDefault();
     if (!compForm.user_id || !compForm.compensation_type_id || !compForm.currency_id) {
       showToast('Employee, compensation type, and currency are required.', 'error');
+      return;
+    }
+    if (compMode === 'correct' && compEditTarget) {
+      correctCompensationMutation.mutate({
+        id: compEditTarget.id,
+        data: {
+          compensation_type_id: Number(compForm.compensation_type_id),
+          base_amount: Number(compForm.base_amount || 0),
+          currency_id: Number(compForm.currency_id),
+          expected_monthly_hours: compForm.expected_monthly_hours ? Number(compForm.expected_monthly_hours) : undefined,
+          hourly_rate: compForm.hourly_rate ? Number(compForm.hourly_rate) : undefined,
+          tds_percent: compForm.tds_percent ? Number(compForm.tds_percent) : undefined,
+          pf_percent: compForm.pf_percent ? Number(compForm.pf_percent) : undefined,
+          esi_percent: compForm.esi_percent ? Number(compForm.esi_percent) : undefined,
+        },
+      });
       return;
     }
     createCompensationMutation.mutate({
@@ -1066,9 +1103,27 @@ export default function PayrollDashboard() {
             </div>
             <form onSubmit={handleCompensationSubmit}>
               <div className="modal-body flex flex-col gap-3">
+                {compEditTarget && (
+                  <div className="form-group" style={{ padding: '0.75rem', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      How should this change be saved?
+                      <HelpIcon text="A pay change (raise, new structure) should be a NEW record so payroll history stays accurate. Use 'Correct this entry' only to fix a typo in the current record — it rewrites it in place with no history." />
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', fontSize: '0.8125rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="radio" name="comp-mode" checked={compMode === 'new'} onChange={() => setCompMode('new')} />
+                        New salary record (pay change — keeps history)
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="radio" name="comp-mode" checked={compMode === 'correct'} onChange={() => setCompMode('correct')} />
+                        Correct this entry (fix a typo — no new version)
+                      </label>
+                    </div>
+                  </div>
+                )}
                 <div className="form-group">
                   <label className="form-label">Employee</label>
-                  <select className="form-input text-xs" value={compForm.user_id} onChange={e => setCompForm({ ...compForm, user_id: e.target.value })} required>
+                  <select className="form-input text-xs" value={compForm.user_id} onChange={e => setCompForm({ ...compForm, user_id: e.target.value })} required disabled={compMode === 'correct'}>
                     <option value="">Select employee...</option>
                     {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
@@ -1124,8 +1179,10 @@ export default function PayrollDashboard() {
               </div>
               <div className="modal-footer">
                 <button type="button" onClick={() => setShowCompensationModal(false)} className="btn btn-secondary btn-sm">Cancel</button>
-                <button type="submit" disabled={createCompensationMutation.isPending} className="btn btn-primary btn-sm">
-                  {createCompensationMutation.isPending ? 'Saving...' : 'Save'}
+                <button type="submit" disabled={createCompensationMutation.isPending || correctCompensationMutation.isPending} className="btn btn-primary btn-sm">
+                  {(createCompensationMutation.isPending || correctCompensationMutation.isPending)
+                    ? 'Saving...'
+                    : compMode === 'correct' ? 'Correct Entry' : 'Save New Record'}
                 </button>
               </div>
             </form>

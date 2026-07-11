@@ -11,6 +11,7 @@ import { Plus, Search, FileText, ChevronLeft, ChevronRight, Eye, Calendar, Dolla
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 const QUOTES_HOWTO = {
   overview: 'A Quote is a priced proposal you send to a lead or client before any work starts — it lists the services, quantities, discounts, and taxes, and adds up to the amount you are asking them to approve. Once a client says yes, the quote becomes the basis for an invoice and, later, a project.',
@@ -178,27 +179,8 @@ export default function QuotesPage() {
   const quotesList = data?.data || [];
   const meta = data?.meta || { current_page: 1, last_page: 1, per_page: 10, total: 0 };
 
-  // Helper: Status badge colors
-  const getStatusBadge = (status: Quote['status']) => {
-    const badges: Record<Quote['status'], { label: string; className: string }> = {
-      draft: { label: 'Draft', className: 'badge-muted' },
-      pending_approval: { label: 'Pending Approval', className: 'badge-warning' },
-      approved: { label: 'Approved', className: 'badge-success' },
-      sent: { label: 'Sent', className: 'badge-info' },
-      accepted: { label: 'Accepted', className: 'badge-accent' },
-      rejected: { label: 'Rejected', className: 'badge-danger' },
-      expired: { label: 'Expired', className: 'badge-muted' },
-      converted: { label: 'Converted', className: 'badge-success' },
-    };
-
-    const config = badges[status] || { label: status, className: 'badge-muted' };
-
-    return (
-      <span className={`badge ${config.className}`}>
-        {config.label}
-      </span>
-    );
-  };
+  // Status badges come from the shared map (components/ui/StatusBadge).
+  const getStatusBadge = (status: Quote['status']) => <StatusBadge kind="quote" status={status} />;
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

@@ -12,8 +12,7 @@ import {
   quotes as quotesApi,
   services as servicesApi,
   leads as leadsApi,
-  roles as rolesApi,
-  users as usersApi,
+  clientsApi,
   platformSettings,
   getApiErrorMessage
 } from '@/lib/api';
@@ -139,24 +138,19 @@ function InvoiceBuilderForm() {
     }
   });
 
-  // Client picker: find the 'client' role, then list users with that role.
-  const { data: clientRoleId } = useQuery({
-    queryKey: ['roles_client_role_id'],
+  // Client picker: the Clients module directory (clients.view). The previous
+  // roles+users lookup required roles.view/users.view, which only
+  // founder/director hold — the picker was silently empty for finance.
+  const { data: clientUsers = [], isError: isClientsError } = useQuery({
+    queryKey: ['clients_directory', 'picker'],
     queryFn: async () => {
-      const res = await rolesApi.list();
-      const clientRole = (res.data || []).find((r: any) => r.name === 'client');
-      return clientRole?.id ?? null;
-    }
-  });
-
-  const { data: clientUsers = [] } = useQuery({
-    queryKey: ['clients_for_picker', clientRoleId],
-    queryFn: async () => {
-      if (!clientRoleId) return [];
-      const res = await usersApi.list({ role_id: clientRoleId, per_page: 100 });
-      return res.data?.data || [];
+      const res = await clientsApi.list();
+      return (res.data?.breakdown || []).map((c) => ({
+        id: c.client_id,
+        name: c.company_name ? `${c.company_name} (${c.client_name})` : c.client_name,
+        email: c.client_email,
+      }));
     },
-    enabled: clientRoleId !== null && clientRoleId !== undefined,
   });
 
   // Set default issue and due dates
@@ -421,6 +415,11 @@ function InvoiceBuilderForm() {
                   <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
                 ))}
               </select>
+              {isClientsError && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.375rem' }}>
+                  Couldn't load the client list — refresh the page to retry.
+                </p>
+              )}
             </div>
 
             {/* Description */}

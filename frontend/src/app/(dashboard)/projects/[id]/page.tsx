@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/hooks/useToast';
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import TaskDetailSlideOver from '@/components/TaskDetailSlideOver';
+import ApplyTemplateModal from '../components/ApplyTemplateModal';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
@@ -74,6 +75,7 @@ export default function ProjectDetailPage() {
 
   // New task inline form toggle
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskStatus, setNewTaskStatus] = useState<'todo' | 'in_progress' | 'review' | 'blocked' | 'done'>('todo');
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
@@ -434,7 +436,16 @@ export default function ProjectDetailPage() {
               </span>
             </div>
             <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>{project?.name}</h3>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Client: {project?.client?.name || 'Walk-in Client'}</p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Client:{' '}
+              {project?.client?.id ? (
+                <Link href={`/clients/${project.client.id}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                  {project.client.name}
+                </Link>
+              ) : (
+                project?.client?.name || 'Walk-in Client'
+              )}
+            </p>
           </div>
 
           <div className="divider" style={{ margin: 0 }} />
@@ -661,13 +672,23 @@ export default function ProjectDetailPage() {
 
             {/* Quick Context actions */}
             {activeTab === 'tasks' && (
-              <button
-                onClick={() => setShowCreateTaskModal(true)}
-                className="btn btn-primary btn-sm"
-                style={{ height: '30px' }}
-              >
-                <Plus size={14} /> Add Task
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={() => setShowApplyTemplateModal(true)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ height: '30px' }}
+                  title="Create this project's standard task list from a saved template"
+                >
+                  Apply Template
+                </button>
+                <button
+                  onClick={() => setShowCreateTaskModal(true)}
+                  className="btn btn-primary btn-sm"
+                  style={{ height: '30px' }}
+                >
+                  <Plus size={14} /> Add Task
+                </button>
+              </div>
             )}
           </div>
 
@@ -1121,6 +1142,19 @@ export default function ProjectDetailPage() {
       />
 
       {/* ── Create Task Inline Dialog ── */}
+      {showApplyTemplateModal && project && (
+        <ApplyTemplateModal
+          projectId={project.id}
+          isRecurringProject={!!project.is_recurring}
+          onClose={() => setShowApplyTemplateModal(false)}
+          onApplied={() => {
+            setShowApplyTemplateModal(false);
+            queryClient.invalidateQueries({ queryKey: ['projectTasks', projectId] });
+            queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          }}
+        />
+      )}
+
       {showCreateTaskModal && (
         <div className="overlay">
           <div className="modal" style={{ maxWidth: '480px' }}>

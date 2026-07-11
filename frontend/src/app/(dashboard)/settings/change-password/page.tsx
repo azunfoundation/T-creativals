@@ -6,6 +6,7 @@ import { Lock, Save, Eye, EyeOff } from 'lucide-react';
 import { auth, getApiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -17,6 +18,24 @@ export default function ChangePasswordPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isPasswordValid = password.length >= 8;
+  const [showLogoutAllConfirm, setShowLogoutAllConfirm] = useState(false);
+
+  const logoutAllMutation = useMutation({
+    mutationFn: () => auth.logoutAll(),
+    onSuccess: () => {
+      // Every token is revoked (including this one) — clear local state and
+      // return to login.
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        window.location.href = '/login';
+      }
+    },
+    onError: (err: any) => {
+      setErrorMsg(getApiErrorMessage(err, 'Failed to sign out of all devices.'));
+      setTimeout(() => setErrorMsg(null), 5000);
+    },
+  });
 
   const changePasswordMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -224,6 +243,40 @@ export default function ChangePasswordPage() {
           </div>
         </form>
       </div>
+
+      {/* Sign out all devices — wires the previously unreachable
+          POST /auth/logout-all endpoint where it product-wise belongs. */}
+      <div className="card" style={{ marginTop: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)' }}>Sign out of all devices</h3>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.25rem', maxWidth: 520 }}>
+              Ends every active session for your account — including this one. Use this if you
+              logged in on a shared computer or suspect someone else has your session.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary text-danger"
+            disabled={logoutAllMutation.isPending}
+            onClick={() => setShowLogoutAllConfirm(true)}
+          >
+            {logoutAllMutation.isPending ? 'Signing out…' : 'Sign Out Everywhere'}
+          </button>
+        </div>
+      </div>
+
+      {showLogoutAllConfirm && (
+        <ConfirmModal
+          title="Sign Out of All Devices"
+          message="This ends every active session for your account, including this one — you'll be taken back to the login page. Continue?"
+          confirmLabel="Sign Out Everywhere"
+          cancelLabel="Cancel"
+          danger={true}
+          onConfirm={() => { setShowLogoutAllConfirm(false); logoutAllMutation.mutate(); }}
+          onCancel={() => setShowLogoutAllConfirm(false)}
+        />
+      )}
     </div>
   );
 }

@@ -98,13 +98,16 @@ const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 // Quick create actions
 // NOTE: /xxx/new routes do not exist — list pages open their create modal via
 // ?new=true, and invoices/quotes have dedicated /create pages.
+// Each action carries the same permission string the backend enforces, so
+// the menu never offers a create the server would 403. "New Expense" has no
+// requirement — any employee may log their own expenses.
 const QUICK_CREATE_ACTIONS = [
-  { label: 'New Lead',    icon: Users,        href: '/crm?new=true',      color: '#7c3aed' },
-  { label: 'New Client',  icon: Building2,    href: '/clients',           color: '#2563eb' },
-  { label: 'New Project', icon: FolderKanban, href: '/projects?new=true', color: '#059669' },
-  { label: 'New Task',    icon: CheckSquare,  href: '/tasks?new=true',    color: '#d97706' },
-  { label: 'New Invoice', icon: Receipt,      href: '/invoices/create',   color: '#dc2626' },
-  { label: 'New Expense', icon: CreditCard,   href: '/expenses?new=true', color: '#7c3aed' },
+  { label: 'New Lead',    icon: Users,        href: '/crm?new=true',      color: '#7c3aed', permissions: ['leads.create'] },
+  { label: 'New Client',  icon: Building2,    href: '/clients',           color: '#2563eb', permissions: ['clients.create'] },
+  { label: 'New Project', icon: FolderKanban, href: '/projects?new=true', color: '#059669', permissions: ['projects.create'] },
+  { label: 'New Task',    icon: CheckSquare,  href: '/tasks?new=true',    color: '#d97706', permissions: ['tasks.create'] },
+  { label: 'New Invoice', icon: Receipt,      href: '/invoices/create',   color: '#dc2626', permissions: ['invoices.create'] },
+  { label: 'New Expense', icon: CreditCard,   href: '/expenses?new=true', color: '#7c3aed', permissions: undefined as string[] | undefined },
 ];
 
 // Breadcrumb segment label map
@@ -367,7 +370,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {quickCreateOpen && (
                   <div className="quick-create-menu">
                     <div className="quick-create-section-label">Create New</div>
-                    {QUICK_CREATE_ACTIONS.map((action) => {
+                    {QUICK_CREATE_ACTIONS.filter((action) => hasPermission(action.permissions)).map((action) => {
                       const Icon = action.icon;
                       return (
                         <Link

@@ -2,22 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Save, Loader2, AlertCircle, Mail } from 'lucide-react';
+import { Bell, Save, Loader2, AlertCircle, Mail, BellRing } from 'lucide-react';
 import { notificationPreferences as prefsApi, getApiErrorMessage } from '@/lib/api';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
 
-// Only these 3 events actually have a working notification behind them today
-// (TaskController / TimesheetController / PayrollRunController each check the
-// saved 'email' preference before sending). Every other event this app can log
-// (lead assignment, invoice overdue, payment received) has no email or in-app
-// wiring at all yet, and in-app/push channels aren't consulted anywhere in the
-// codebase regardless of event — so this page only offers what it can actually
-// deliver, instead of presenting toggles that silently do nothing.
-const EVENT_TYPES = [
-  { key: 'task_assigned', label: 'Task Assignment', desc: 'When a new project task is assigned to you.' },
-  { key: 'timesheet_submitted', label: 'Timesheet Submissions', desc: 'When a team member submits a timesheet for your review.' },
-  { key: 'payroll_processed', label: 'Payslip Availability', desc: 'When your monthly salary run is approved and payslip is ready.' },
+// Every event listed here has REAL wiring behind it (see the cross-cutting
+// module audit): the email column is consulted before each mail is sent, and
+// the in-app column gates the alert for the events that produce one. Events
+// without an in-app alert show a dash instead of a decorative checkbox.
+const EVENT_TYPES: Array<{ key: string; label: string; desc: string; hasInApp: boolean }> = [
+  { key: 'task_assigned', label: 'Task Assignment', desc: 'When a new project task is assigned to you.', hasInApp: false },
+  { key: 'timesheet_submitted', label: 'Timesheet Submissions', desc: 'When a team member submits a timesheet for your review.', hasInApp: false },
+  { key: 'payroll_processed', label: 'Payslip Availability', desc: 'When your monthly salary run is approved and payslip is ready.', hasInApp: false },
+  { key: 'lead_assigned', label: 'Lead Assignment', desc: 'When a CRM lead is assigned or reassigned to you.', hasInApp: true },
+  { key: 'invoice_overdue', label: 'Invoice Overdue', desc: 'When an invoice you issued passes its due date unpaid (checked daily).', hasInApp: true },
+  { key: 'payment_received', label: 'Payment Received', desc: 'When someone records a client payment on an invoice you issued.', hasInApp: true },
 ];
 
 export default function NotificationSettingsPage() {
@@ -26,6 +26,7 @@ export default function NotificationSettingsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [emailMap, setEmailMap] = useState<Record<string, boolean>>({});
+  const [inAppMap, setInAppMap] = useState<Record<string, boolean>>({});
 
   // Fetch preferences. Note: the API returns a bare array ({data: [...]} with no
   // pagination meta), which the global axios interceptor unwraps to the array
@@ -39,22 +40,30 @@ export default function NotificationSettingsPage() {
   });
 
   useEffect(() => {
-    const initialMap: Record<string, boolean> = {};
-    EVENT_TYPES.forEach(evt => { initialMap[evt.key] = false; });
+    const emails: Record<string, boolean> = {};
+    const inApps: Record<string, boolean> = {};
+    EVENT_TYPES.forEach(evt => {
+      emails[evt.key] = false;   // email is opt-in
+      inApps[evt.key] = true;    // in-app alerts are on unless turned off
+    });
 
     if (Array.isArray(serverPrefs)) {
-      serverPrefs.forEach(item => {
-        if (item.event_type in initialMap) {
-          initialMap[item.event_type] = item.email;
+      serverPrefs.forEach((item: any) => {
+        if (item.event_type in emails) {
+          emails[item.event_type] = !!item.email;
+          if (item.in_app !== undefined && item.in_app !== null) {
+            inApps[item.event_type] = !!item.in_app;
+          }
         }
       });
     }
 
-    setEmailMap(initialMap);
+    setEmailMap(emails);
+    setInAppMap(inApps);
   }, [serverPrefs]);
 
   const updatePrefsMutation = useMutation({
-    mutationFn: (data: Array<{ event_type: string; email: boolean }>) => prefsApi.update(data),
+    mutationFn: (data: Array<{ event_type: string; email: boolean; in_app: boolean }>) => prefsApi.update(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationPreferences'] });
       triggerAlert('Notification preferences saved successfully.');
@@ -81,12 +90,13 @@ export default function NotificationSettingsPage() {
     const payload = EVENT_TYPES.map(evt => ({
       event_type: evt.key,
       email: emailMap[evt.key] || false,
+      in_app: evt.hasInApp ? (inAppMap[evt.key] ?? true) : true,
     }));
     updatePrefsMutation.mutate(payload);
   };
 
   const guideContent = {
-    overview: 'Choose which of the events below should email you. These are the only notifications this app can currently send automatically — everything else on the platform (like a new lead assignment) shows up as an in-app alert only, which is always on and cannot be turned off here.',
+    overview: 'Choose how each event notifies you. Email is off unless you turn it on; in-app alerts (the bell) are on unless you turn them off. Events showing a dash in the In-App column never produce an alert — only an email — so there is nothing to toggle.',
     sections: [
       {
         heading: 'What each event covers',
@@ -94,13 +104,17 @@ export default function NotificationSettingsPage() {
           'Task Assignment — emails you when a project task is assigned to you.',
           'Timesheet Submissions — emails whoever needs to review a submitted timesheet.',
           'Payslip Availability — emails you once your monthly payroll run is approved.',
+          'Lead Assignment — alerts (and optionally emails) you when a CRM lead is assigned or reassigned to you.',
+          'Invoice Overdue — alerts (and optionally emails) you when an invoice you issued goes past due; a daily sweep checks every morning.',
+          'Payment Received — alerts (and optionally emails) you when someone else records a payment on your invoice.',
         ],
       },
       {
         heading: 'Good to know',
         items: [
           'These settings only affect your own account — every user manages their own notification preferences.',
-          'Emails depend on SMTP being configured correctly (see Mail/SMTP Settings) — test it there if emails aren’t arriving.',
+          'Other activity (quote approvals, lead stage changes) always shows as an in-app alert and can\'t be turned off here.',
+          'Emails depend on SMTP being configured correctly (see Mail/SMTP Settings) — test it there if emails aren\'t arriving.',
         ],
       },
     ],
@@ -156,10 +170,10 @@ export default function NotificationSettingsPage() {
             <Bell size={18} style={{ color: 'var(--accent)' }} />
             <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Personal Notification Settings</h2>
             <HelpIcon
-              title="Email Notifications"
+              title="Notifications"
               content={{
-                what: 'Turns email delivery on or off per event, for your account only.',
-                why: 'Only these 3 events currently trigger an email — other activity (like lead or quote changes) only ever shows as an in-app alert, which is always on.',
+                what: 'Per-event control over how you\'re notified: Email (off unless enabled) and In-App alerts (on unless disabled).',
+                why: 'Every toggle here is honored by the code that sends the notification — a dash means that event never produces that kind of notification.',
               }}
             />
           </div>
@@ -168,13 +182,13 @@ export default function NotificationSettingsPage() {
 
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            Choose which system events should send you an email. In-app alerts for other activity are always on.
+            Choose how each event notifies you. Alerts for other activity (quote approvals, stage changes) are always on.
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '3fr 1fr',
+              gridTemplateColumns: '3fr 1fr 1fr',
               borderBottom: '1px solid var(--border)',
               paddingBottom: '0.5rem',
               fontWeight: 600,
@@ -186,6 +200,9 @@ export default function NotificationSettingsPage() {
               <div style={{ textAlign: 'center' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Mail size={12} /> Email</span>
               </div>
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><BellRing size={12} /> In-App</span>
+              </div>
             </div>
 
             {EVENT_TYPES.map(evt => (
@@ -193,7 +210,7 @@ export default function NotificationSettingsPage() {
                 key={evt.key}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '3fr 1fr',
+                  gridTemplateColumns: '3fr 1fr 1fr',
                   padding: '0.75rem 0',
                   borderBottom: '1px solid var(--border)',
                   fontSize: '0.875rem',
@@ -212,6 +229,19 @@ export default function NotificationSettingsPage() {
                     onChange={(e) => setEmailMap(prev => ({ ...prev, [evt.key]: e.target.checked }))}
                     style={{ transform: 'scale(1.25)', cursor: 'pointer' }}
                   />
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  {evt.hasInApp ? (
+                    <input
+                      type="checkbox"
+                      checked={inAppMap[evt.key] ?? true}
+                      onChange={(e) => setInAppMap(prev => ({ ...prev, [evt.key]: e.target.checked }))}
+                      style={{ transform: 'scale(1.25)', cursor: 'pointer' }}
+                    />
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }} title="This event sends an email only — it doesn't create an in-app alert.">—</span>
+                  )}
                 </div>
               </div>
             ))}

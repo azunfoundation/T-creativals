@@ -46,7 +46,7 @@ const PORTAL_PROJECT_HOWTO = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function StatusChip({ status, type }: { status: string; type?: 'task' | 'milestone' }) {
+function StatusChip({ status, type }: { status: string; type?: 'task' | 'milestone' | 'project' }) {
   const taskMap: Record<string, { bg: string; color: string; label: string }> = {
     todo:        { bg: 'var(--surface-2)', color: 'var(--text-muted)',   label: 'To Do' },
     in_progress: { bg: '#1e3a5f',          color: '#60a5fa',              label: 'In Progress' },
@@ -61,7 +61,15 @@ function StatusChip({ status, type }: { status: string; type?: 'task' | 'milesto
     completed:   { bg: '#1a2e1a',          color: '#4ade80',              label: 'Completed' },
     overdue:     { bg: '#2e1a1a',          color: '#f87171',              label: 'Overdue' },
   };
-  const map = type === 'milestone' ? msMap : taskMap;
+  const projectMap: Record<string, { bg: string; color: string; label: string }> = {
+    planning:    { bg: 'var(--surface-2)', color: 'var(--text-muted)', label: 'Getting Started' },
+    in_progress: { bg: '#1e3a5f',          color: '#60a5fa',            label: 'In Progress' },
+    active:      { bg: '#1e3a5f',          color: '#60a5fa',            label: 'In Progress' },
+    on_hold:     { bg: '#3a2e1a',          color: '#facc15',            label: 'On Hold' },
+    completed:   { bg: '#1a2e1a',          color: '#4ade80',            label: 'Completed' },
+    cancelled:   { bg: '#2a1a1a',          color: '#6b7280',            label: 'Closed' },
+  };
+  const map = type === 'milestone' ? msMap : type === 'project' ? projectMap : taskMap;
   const s = map[status] ?? { bg: 'var(--surface-2)', color: 'var(--text-secondary)', label: status };
   return (
     <span style={{ background: s.bg, color: s.color, fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
@@ -216,7 +224,7 @@ export default function PortalProjectDetail() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem' }}>
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{project.name}</h1>
-                <StatusChip status={project.status} />
+                <StatusChip status={project.status} type="project" />
                 <HelpIcon title="Your Project" content={{
                   what: 'A live view of this project — its overall progress, major milestones, and the tasks our team is working on.',
                   why: 'So you can follow along in real time instead of waiting for status updates.',
@@ -228,6 +236,18 @@ export default function PortalProjectDetail() {
               )}
               {project.description && (
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', maxWidth: 640, lineHeight: 1.6 }}>{project.description}</p>
+              )}
+              {project.manager && (
+                <div style={{ marginTop: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.625rem', padding: '0.5rem 0.875rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Your account manager:</span>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>{project.manager.name}</span>
+                  {project.manager.email && (
+                    <a href={`mailto:${project.manager.email}?subject=${encodeURIComponent('Question about ' + project.name)}`}
+                      style={{ fontSize: '0.75rem', fontWeight: 600, color: '#34d399' }}>
+                      Send a message →
+                    </a>
+                  )}
+                </div>
               )}
             </div>
 

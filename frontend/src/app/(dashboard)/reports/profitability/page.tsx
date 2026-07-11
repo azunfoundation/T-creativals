@@ -8,6 +8,7 @@ import KpiCard from '@/components/reports/KpiCard';
 import ReportTable from '@/components/reports/ReportTable';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { statusBadgeConfig } from '@/components/ui/StatusBadge';
 import { useToast } from '@/hooks/useToast';
 import { formatCurrency } from '@/lib/utils';
 import { Briefcase, Wallet, Users, CreditCard, Sparkles, TrendingUp } from 'lucide-react';
@@ -52,18 +53,13 @@ export default function ProjectProfitabilityReport() {
     }
   };
 
+  // Shared project-status badge map (components/ui/StatusBadge) — labels
+  // upper-cased to preserve this report's original look.
   const getStatusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      planning: 'badge-info',
-      active: 'badge-accent',
-      on_hold: 'badge-warning',
-      completed: 'badge-success',
-      cancelled: 'badge-danger',
-    };
-    const badgeClass = map[status] || 'badge-muted';
+    const config = statusBadgeConfig('project', status);
     return (
-      <span className={`badge ${badgeClass}`}>
-        {status.toUpperCase().replace('_', ' ')}
+      <span className={`badge ${config.className}`} style={{ textTransform: 'uppercase' }}>
+        {config.label}
       </span>
     );
   };

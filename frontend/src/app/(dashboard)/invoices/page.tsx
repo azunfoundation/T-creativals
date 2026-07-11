@@ -17,6 +17,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 const INVOICES_HOWTO = {
   overview: 'An invoice is the official bill you send a client for agreed work or services. This page lists every invoice, shows how much has been collected, and lets you record payments as money comes in.',
@@ -225,29 +226,8 @@ export default function InvoicesDashboard() {
     }
   };
 
-  // Helper: Status badge colors (full backend enum)
-  const getStatusBadge = (status: Invoice['status']) => {
-    const badges: Record<Invoice['status'], { label: string; className: string }> = {
-      draft: { label: 'Draft', className: 'badge-muted' },
-      pending_review: { label: 'Pending Review', className: 'badge-warning' },
-      pending_approval: { label: 'Pending Approval', className: 'badge-warning' },
-      approved: { label: 'Approved', className: 'badge-accent' },
-      sent: { label: 'Sent', className: 'badge-info' },
-      partially_paid: { label: 'Partially Paid', className: 'badge-warning' },
-      paid: { label: 'Paid', className: 'badge-success' },
-      overdue: { label: 'Overdue', className: 'badge-danger' },
-      void: { label: 'Void', className: 'badge-muted' },
-      cancelled: { label: 'Cancelled', className: 'badge-muted' },
-    };
-
-    const config = badges[status] || { label: status, className: 'badge-muted' };
-
-    return (
-      <span className={`badge ${config.className}`}>
-        {config.label}
-      </span>
-    );
-  };
+  // Status badges come from the shared map (components/ui/StatusBadge).
+  const getStatusBadge = (status: Invoice['status']) => <StatusBadge kind="invoice" status={status} />;
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoices as invoicesApi, creditNotes as creditNotesApi, getApiErrorMessage } from '@/lib/api';
+import { invoices as invoicesApi, creditNotes as creditNotesApi, payments as paymentsApi, getApiErrorMessage } from '@/lib/api';
 import type { Invoice, Payment } from '@/lib/api';
 import { 
   ArrowLeft, Printer, FileText, Calendar, Building, CreditCard, 
@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 const INVOICE_DETAIL_HOWTO = {
   overview: 'This page shows one invoice in full: a printable preview on the left, and the approval workflow, receivables tracking, and payment history on the right. Every action for this invoice lives in the button row at the top.',
@@ -130,12 +132,27 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
   };
 
   const { user } = useAuthStore();
+  const canDeletePayments = (user?.permissions || []).includes('invoices.delete');
+  const [paymentToDelete, setPaymentToDelete] = useState<{ id: number; number: string } | null>(null);
   const [approvalComments, setApprovalComments] = useState('');
 
   const invalidateInvoiceQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['invoices_dashboard'] });
     queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] });
   };
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: (paymentId: number) => paymentsApi.delete(paymentId),
+    onSuccess: () => {
+      setPaymentToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] });
+      showToast('Payment removed — invoice balance recalculated.', 'success');
+    },
+    onError: (err: any) => {
+      setPaymentToDelete(null);
+      showToast(getApiErrorMessage(err, 'Failed to remove the payment.'), 'error');
+    },
+  });
 
   const submitApprovalMutation = useMutation({
     mutationFn: () => invoicesApi.submitApproval(invoiceId, approvalComments || undefined),
@@ -291,23 +308,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
     });
   };
 
-  // Full-enum status badge, matching invoices/page.tsx labeling.
-  const getStatusBadgeInline = (status: Invoice['status']) => {
-    const badges: Record<Invoice['status'], { label: string; className: string }> = {
-      draft: { label: 'Draft', className: 'badge-muted' },
-      pending_review: { label: 'Pending Review', className: 'badge-warning' },
-      pending_approval: { label: 'Pending Approval', className: 'badge-warning' },
-      approved: { label: 'Approved', className: 'badge-accent' },
-      sent: { label: 'Sent', className: 'badge-info' },
-      partially_paid: { label: 'Partially Paid', className: 'badge-warning' },
-      paid: { label: 'Paid', className: 'badge-success' },
-      overdue: { label: 'Overdue', className: 'badge-danger' },
-      void: { label: 'Void', className: 'badge-muted' },
-      cancelled: { label: 'Cancelled', className: 'badge-muted' },
-    };
-    const config = badges[status] || { label: status, className: 'badge-muted' };
-    return <span className={`badge ${config.className}`}>{config.label}</span>;
-  };
+  // Full-enum status badge — sourced from the shared StatusBadge maps.
+  const getStatusBadgeInline = (status: Invoice['status']) => <StatusBadge kind="invoice" status={status} />;
 
   const getStatusColor = (status: Invoice['status']) => {
     switch (status) {
@@ -527,7 +529,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
                   <Building size={12} /> Billed To (Client):
                 </span>
                 <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>{invoice.client?.name || 'N/A'}</h4>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {invoice.client?.name || 'N/A'}
+                    {invoice.client?.id && (
+                      <Link href={`/clients/${invoice.client.id}`} className="print:hidden" style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--accent)', marginLeft: 8 }}>
+                        View client page →
+                      </Link>
+                    )}
+                  </h4>
                   {invoice.client?.email && <p style={{ color: 'var(--text-secondary)' }}>Email: {invoice.client.email}</p>}
                   {invoice.lead_id && <p style={{ color: 'var(--text-muted)', fontSize: '0.625rem', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Linked CRM Account #{invoice.lead_id}</p>}
                 </div>
@@ -911,9 +920,21 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
                 {invoice.payments.map((p) => (
                   <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', position: 'relative', fontSize: '0.75rem' }}>
                     <div style={{ position: 'absolute', left: '-1.5rem', top: '2px', width: '9px', height: '9px', borderRadius: '50%', background: 'var(--success)', border: '2px solid var(--surface)' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>{p.payment_number}</span>
-                      <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>{formatDate(p.payment_date)}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>{formatDate(p.payment_date)}</span>
+                        {canDeletePayments && (
+                          <button
+                            className="print:hidden"
+                            title="Remove this payment (recalculates the invoice balance)"
+                            onClick={() => setPaymentToDelete({ id: p.id, number: p.payment_number })}
+                            style={{ color: 'var(--danger)', display: 'inline-flex' }}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </span>
                     </div>
                     <p style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.125rem' }}>{formatCurrency(p.amount, invoice.currency)}</p>
                     <p style={{ fontSize: '0.625rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600, marginTop: '0.125rem' }}>{p.payment_method.replace('_', ' ')}</p>
@@ -932,6 +953,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
               </div>
             )}
           </div>
+
+          {paymentToDelete && (
+            <ConfirmModal
+              title="Remove Payment"
+              message={`Remove payment ${paymentToDelete.number} from this invoice? The invoice's paid amount, balance due, and status will be recalculated. Do this only to correct a mis-entered payment.`}
+              confirmLabel="Remove Payment"
+              cancelLabel="Cancel"
+              danger={true}
+              onConfirm={() => deletePaymentMutation.mutate(paymentToDelete.id)}
+              onCancel={() => setPaymentToDelete(null)}
+            />
+          )}
 
           {/* Quote info panel if converted */}
           {invoice.quote_id && (

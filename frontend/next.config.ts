@@ -1,16 +1,25 @@
 import type { NextConfig } from "next";
 
+// The production image host is derived from NEXT_PUBLIC_API_URL at build
+// time so no deployment-specific hostname lives in the repo.
+const apiHostname = (() => {
+  try {
+    const host = new URL(process.env.NEXT_PUBLIC_API_URL ?? "").hostname;
+    return host && host !== "localhost" ? host : null;
+  } catch {
+    return null;
+  }
+})();
+
 const nextConfig: NextConfig = {
   // Standalone output for Docker production deployment
   output: "standalone",
-  // Allow images served from the Oracle Cloud backend
+  // Allow images served from the backend API host
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "140.245.231.188.nip.io",
-        pathname: "/**",
-      },
+      ...(apiHostname
+        ? [{ protocol: "https" as const, hostname: apiHostname, pathname: "/**" }]
+        : []),
       {
         protocol: "http",
         hostname: "localhost",

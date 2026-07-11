@@ -15,7 +15,7 @@ import {
   users as usersApi,
   leadStages as stagesApi,
   services as servicesApi,
-  reports as reportsApi,
+  clientsApi,
   Lead, LeadContact, LeadActivity, User, LeadStage, Service, ClientReportRow,
   getApiErrorMessage
 } from '@/lib/api';
@@ -171,15 +171,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     }
   });
 
-  const { data: existingClients = [] } = useQuery<ClientReportRow[]>({
-    queryKey: ['reports_clients'],
+  // Sourced from the Clients module endpoint (clients.view) — the reports
+  // endpoint used before requires reports.* permissions that sales execs
+  // don't hold, so the "use existing client" dropdown was silently empty
+  // for them (the catch masked the 403 as no clients).
+  const { data: existingClients = [], isError: isClientsError } = useQuery<ClientReportRow[]>({
+    queryKey: ['clients_directory', 'convert-picker'],
     queryFn: async () => {
-      try {
-        const res = await reportsApi.getClients();
-        return (res as any).data?.breakdown ?? [];
-      } catch {
-        return [];
-      }
+      const res = await clientsApi.list();
+      return res.data?.breakdown ?? [];
     },
     enabled: showConvertModal,
   });
@@ -929,8 +929,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
             {/* Convert to Quote Trigger */}
             {lead.is_converted ? (
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.5rem' }}>
-                This lead has already been converted to a quote.
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <span>This lead has already been converted to a quote.</span>
+                {lead.converted_client_id && (
+                  <Link href={`/clients/${lead.converted_client_id}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                    Open the client account created from this lead →
+                  </Link>
+                )}
               </div>
             ) : (
               <button
@@ -1094,6 +1099,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                         <option key={c.client_id} value={c.client_id}>{c.client_name} ({c.client_email})</option>
                       ))}
                     </select>
+                  )}
+                  {isClientsError && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.375rem' }}>
+                      Couldn't load the client list — close and reopen this dialog to retry.
+                    </p>
                   )}
                 </div>
               </div>
