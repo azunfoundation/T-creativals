@@ -102,7 +102,7 @@ Final state: **all 237 API routes inventoried, 92-step smoke test passing, all 5
 - **Verification:** `/expenses` page compiles and renders (200).
 
 ### 16. Local `.env` carried production configuration
-- **Root cause:** `APP_ENV=production`, `APP_URL=https://140.245.231.188.nip.io`, `FRONTEND_URL=https://creativals.in` on the local machine. Uploaded-file URLs pointed at the production server (confirmed live via upload test), and emailed login links pointed at the production site.
+- **Root cause:** `APP_ENV=production`, `APP_URL=https://<production-host>` (redacted), `FRONTEND_URL=https://creativals.in` on the local machine. Uploaded-file URLs pointed at the production server (confirmed live via upload test), and emailed login links pointed at the production site.
 - **Fix:** Local values: `APP_ENV=local`, `APP_URL=http://localhost:8000`, `FRONTEND_URL=http://localhost:3000`. (Production deployments keep their own values.)
 - **Verification:** Config greps; no code depends on the `production` env name.
 

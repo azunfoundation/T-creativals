@@ -39,14 +39,15 @@ and is not repeated here.
 8. **Reports** ✅ done (2026-07-10)
 9. **Settings & Notifications** ✅ done (2026-07-10) — done out of order, by explicit
    user request, ahead of Dashboard/Clients/Services/Users/Roles & Permissions.
-10. Dashboard (depends on all other modules) ← up next
-11. Clients
-12. Services
-13. Users
-14. Roles & Permissions
-15. AI Assistant (chat/automations — separate from the Settings module's own scope; see that module's notes on why no "AI settings" page exists)
-16. Client Portal
-17. Final production cleanup
+10. **Dashboard** ✅ done (2026-07-10)
+11. **Clients** ✅ done (2026-07-10)
+12. **Services & Packages** ✅ done (2026-07-10)
+13. **Users, Departments & Roles** ✅ done (2026-07-10)
+14. Roles & Permissions (rewritten in the Production Readiness audit; verified in 13)
+15. **AI Assistant & Automations** ✅ done (2026-07-11) (chat/automations — separate from the Settings module's own scope; see that module's notes on why no "AI settings" page exists)
+16. **Client Portal** ✅ done (2026-07-11)
+17. **Cross-cutting completion** ✅ done (2026-07-11)
+18. Final production cleanup ← up next
 
 Revised per the user's 2026-07-09 request to follow the real agency workflow
 (lead → client → quote → invoice → project/tasks → time → attendance →
@@ -2273,3 +2274,1117 @@ independently on first visit.
   prerender cleanly.
 - Not browser-tested, per the standing instruction — user verifies every
   page manually.
+
+---
+
+## Module: Dashboard
+
+**Status:** ✅ production-ready (completed 2026-07-10)
+
+### Scope
+The main Dashboard page (`frontend/src/app/(dashboard)/dashboard/page.tsx`) and
+its backend, `ReportController::dashboardOverview` (`GET /reports/dashboard`),
+plus a new `GET /reports/dashboard/briefing` endpoint. Audited against the
+PRD's Founder Dashboard spec and the role-specific dashboard requirement
+(Sales / Project / Employee / Finance views as filtered variants of one page).
+
+### Findings (root causes, before fixes)
+1. **Company-wide financial data leaked to every authenticated user.** Only
+   sections 1–3 of `dashboardOverview` (revenue/pipeline/utilisation) were
+   permission-gated; everything added later — the full attention lists with
+   overdue-invoice amounts, the 6-month financial trends (revenue, expenses,
+   payroll, profit), the all-employee Team Performance table, the sales
+   funnel with pipeline value, active-clients count, and the executive
+   briefing with revenue figures — was computed and returned unconditionally.
+   A plain `employee` calling `/reports/dashboard` received all of it. Same
+   class as the Reports module's PM profitability leak, but wider.
+2. **`$this->gemini` was referenced but never injected** (the bug flagged in
+   the Reports audit) — the AI executive briefing ALWAYS threw, was swallowed
+   by the surrounding `try/catch`, and the hardcoded template fallback was
+   presented under an "AI Co-Pilot" label with a pulsing "live" dot, as if a
+   model wrote it. Additionally, even with injection fixed, `GeminiService::
+   chatWithoutTools()` silently degrades to a mock "simulator" response when
+   keyless — so callers could never distinguish real AI output honestly.
+3. **The AI call sat inside the dashboard's cache closure** — with a real key
+   configured, the entire dashboard payload would block on an external HTTP
+   fan-out (up to 8 model attempts across two providers) once per minute.
+4. **`this_month_profitability` used the `whereBetween('start_date', …)`
+   filter** (the second bug flagged in the Reports audit) — ongoing projects
+   that started before the current month were silently excluded from
+   this-month profitability.
+5. **Payroll cost in the cash-flow trends was permanently ₹0.** The query
+   filtered `payroll_runs.status = 'paid'` — a state no code path ever
+   reaches (runs only move `draft → approved`, per the Payroll audit). The
+   Margins tab's "Payroll" column and the profit line both silently ignored
+   all real payroll cost.
+6. **"Pending payroll" counted approved runs as pending forever** — the
+   attention counts used `whereIn('status', ['draft','submitted','approved',
+   'processed'])`, but `approved` is the terminal state; a signed-off run
+   never left the "pending" badge.
+7. **Every KPI card rendered a hardcoded fake sparkline** (`sparkline: [20,
+   35, 30, 45, …]` literals) — fabricated trend lines presented as data on
+   all 8 cards, including Revenue and Net Profit, for which real 6-month
+   history existed in the same payload.
+8. **Two different "Net Profit" definitions on the same page**: the KPI card
+   computed revenue − expenses, while the Margins table right below computed
+   revenue − expenses − payroll.
+9. **Severe N+1 in the Project Health loop**: for every project in
+   `projects_list` it ran two aggregate queries AND re-loaded every user with
+   compensation (`User::with('compensation')->get()`) — 3+ queries per
+   project per dashboard load; the hourly-rate map was also independently
+   re-queried by three other sections. `projects_list` itself was returned
+   raw (every column of every visible project) just so the frontend could
+   count actives, and lazy-loaded `manager`/`client` names per row.
+10. **"Delayed projects", "active clients", and "most profitable project"
+    only looked at `status = 'active'`** — `in_progress` is an equally real,
+    reachable delivery status (enum fixed in the Projects audit) and was
+    ignored everywhere; Project Health, meanwhile, included completed and
+    cancelled projects.
+11. **"Leads needing follow-up" counted every unconverted lead** — the PRD's
+    "Pending Follow-ups" means scheduled `lead_followups` rows nobody has
+    completed (the CRM audit built that whole subsystem), which was never
+    queried here.
+12. **Quick-action buttons ignored permissions** — every user saw "+ Invoice",
+    "Run Payroll", etc., regardless of whether the backend would 403 the
+    resulting page/action. The greeting also hardcoded a founder Crown icon
+    and a "Founder" name fallback for every role.
+13. **Overdue-invoice queries treated `pending_review`/`pending_approval`
+    drafts as receivables** (`whereNotIn('status', ['paid','draft',
+    'rejected'])` — also listing `rejected`, which isn't an invoice status,
+    while missing the real `void`/`cancelled`).
+14. **No "who's in today" presence widget** despite `attendance/team` serving
+    exactly that data (flagged in the Attendance audit), and no per-user "my
+    day" data — a plain employee's dashboard was effectively empty widgets.
+15. **PRD's "Top Clients" was never rendered** even though
+    `this_month_revenue.top_clients` already carried the data.
+16. Fixed-column grids (`repeat(4, 1fr)`, `1fr 360px`) with no responsive
+    behavior — the PRD requires mobile/tablet friendliness.
+
+### Fixes applied
+**Backend (`ReportController`, `GeminiService`, `routes/api.php`):**
+- `dashboardOverview` rewritten with per-section permission gates driven by
+  permission strings only (no role-name matching): financial sections
+  (revenue, expenses, profitability, cash-flow trends) require
+  `reports.view_financial`; sales sections (pipeline, quote stats, funnel)
+  require `reports.view_sales`; utilisation + team performance require
+  `reports.view_hr` or are PM-scoped to people logging time on the PM's
+  projects; projects summary/health follow real project visibility
+  (`projects.view_all` / scoped manager-or-member); attention lists are
+  per-capability (invoices → `invoices.view_all`/financial; tasks →
+  company-wide vs PM-scoped vs own-assigned; leads → `leads.view_all`/sales;
+  approvals badge counts only the queues the caller can approve; payroll
+  badge requires `payroll.view`). Ungated sections are simply absent from
+  the payload. Cache key bumped to `dashboard_overview_v2_{user}`.
+- Added `my_summary` for every user: own open/overdue task counts + top-5
+  overdue list, own hours this month, and today's attendance status — the
+  Employee-dashboard variant the PRD requires.
+- Profitability overlap filter applied (finding #4), payroll trend statuses
+  corrected to `approved/processed/paid` (finding #5), pending payroll
+  narrowed to `draft/submitted` (finding #6), receivable statuses centralized
+  as `approved/sent/partially_paid/overdue` (finding #13), running-project
+  statuses centralized as `active/in_progress` (finding #10), pending
+  follow-ups now count real open `lead_followups` (finding #11).
+- Project Health: batched to 2 aggregate queries + one shared hourly-rate map
+  (lazy-loaded once per request), covers running projects only, sorts
+  riskiest-first, caps at 15 rows; `projects_list` (raw model dump) replaced
+  by a compact `projects_summary` (total/active/completed/overdue counts +
+  avg completion, per PRD's "Project Completion").
+- Team performance merged into the utilisation pass (one users fetch + one
+  timesheets fetch), PM-scoped, capped at 12 rows.
+- **New `GET /reports/dashboard/briefing`** (`dashboardBriefing`): gated on
+  `reports.view_financial`, cached 5 minutes, computes its own headline
+  metrics (including the most-profitable-project scan that previously ran on
+  every dashboard load only to feed the AI prompt). `GeminiService` is now
+  properly constructor-injected, and a new `GeminiService::isConfigured()`
+  distinguishes "a real model can be called" from the mock fallback. The
+  response carries `source: 'ai' | 'system'` — `ai` only when a model
+  actually produced valid output; otherwise the metrics template is returned
+  and labeled `system`. The dashboard payload no longer contains
+  `executive_briefing` at all.
+- Removed now-unused `Quote`/`Gate`/`JsonResponse` imports.
+
+**Frontend (`dashboard/page.tsx`, `api.ts`):**
+- Sections render from what the backend actually returned (data-presence
+  driven), so UI visibility can never disagree with server authorization;
+  separate queries (briefing, presence) are gated by the same permission
+  strings the backend checks.
+- KPI cards composed per role: financial viewers get Revenue / Net Profit /
+  Outstanding (badge now honestly says "N billed", not "N unpaid"); sales
+  viewers get New Leads / Conversion Rate; project viewers get Active
+  Projects (with overdue + avg-completion subtext); HR/PM get Team
+  Utilisation; plain employees get My Open Tasks / My Hours / Today's
+  attendance cards instead of empty company widgets.
+- Fake sparklines deleted; Revenue and Net Profit cards now draw their
+  sparklines from the real 6-month `financial_trends`; cards without real
+  history have none.
+- One Net Profit definition everywhere: revenue − expenses − payroll
+  (identical to the Margins table), now correct because payroll cost is real.
+- Executive briefing strip: renders only for financial viewers, from the new
+  endpoint, with its own loading shimmer and error state; labeled "AI
+  Executive Briefing" (with live dot) only when `source === 'ai'`, otherwise
+  "Executive Summary — auto-generated · AI briefing unavailable" with a
+  HelpIcon explaining exactly why. Template text is never presented as AI.
+- New **My Day** panel for every user (open tasks, overdue list, hours this
+  month, clock-in status, each linking to its module).
+- New **Who's In Today** presence widget fed by the existing
+  `attendance/team` endpoint, shown only to `attendance.view_all` holders
+  (mirroring the backend's `viewTeam` gate): in/on-leave/not-in counts plus
+  clocked-in people with clock-in times.
+- New **Top Clients** card (financial viewers) from
+  `this_month_revenue.top_clients` — the PRD Founder Dashboard item that was
+  never rendered.
+- Attention Required: tabs are built only from the lists the backend
+  returned; rows link to detail pages (`/invoices/{id}`); footer chips show
+  personally-actionable approvals and payroll runs awaiting sign-off.
+- Quick actions filtered by the caller's real permission strings
+  (`leads.create`, `quotes.create`, `invoices.create`, `projects.create`,
+  `tasks.create`, `payroll.manage`; "+ Expense" stays for everyone since any
+  employee may log expenses). Founder Crown/"Founder" fallback removed.
+- Responsive: all fixed grids converted to Tailwind responsive classes
+  (KPI grid collapses 4→2→1; side-by-side panels stack on smaller screens);
+  wide tables wrapped in `overflow-x-auto`.
+- Guide + help pass: `HowToUseGuide` rewritten for the role-adaptive
+  behavior; every KPI/panel HelpIcon updated to state exactly what is
+  measured and how it is scoped (current-state funnel vs this-month KPIs,
+  PM-scoped team tables, billed-vs-collected).
+- `api.ts`: added `reports.getDashboardBriefing()` + `DashboardBriefing`
+  type documenting the `source` contract.
+
+### Remaining issues
+- **Department Profitability** (a PRD Founder Dashboard line item) is not on
+  the dashboard — projects cannot be linked to departments anywhere in the
+  product (the `project_departments` pivot has no endpoints or UI; the
+  non-functional picker was removed in the Projects audit), so the figure is
+  currently uncomputable. Logged as a product gap that needs the Projects
+  module to grow department linkage first, not as a dashboard bug.
+- The Sales funnel maps the PRD's "Fresh Lead" to `temperature = 'cold'`
+  (the real enum) — labels stay "Fresh" in the UI; noted here in case the
+  business ever wants a real stage-based funnel instead of temperature-based.
+- `attention_required.counts.invoices_amount` is returned but not yet
+  rendered (the Pay tab shows per-invoice amounts); available for a future
+  headline figure.
+- The briefing cache is global (all financial viewers share one briefing) —
+  intentional, since its inputs are company-wide, but noted.
+
+### Performance improvements
+- Project Health: from 3+ queries per project (including a full users+
+  compensation load per project) to 2 batched aggregates + one shared
+  hourly-rate map per request.
+- Team performance no longer re-fetches all users/timesheets separately from
+  the utilisation section (merged into one pass), and both are skipped
+  entirely for users not entitled to them.
+- The external AI call is out of the dashboard request path entirely
+  (separate endpoint, 5-minute cache) — dashboard latency no longer depends
+  on Gemini/OpenRouter availability.
+- Raw `projects_list` (all columns × all projects) removed from the payload
+  in favor of a 5-field summary; health table capped at 15 rows, team table
+  at 12.
+
+### UI/UX improvements
+- Every role now gets a dashboard that is genuinely theirs: founders/finance
+  see money, sales sees pipeline, PMs see their projects/team, and plain
+  employees get a useful My Day instead of blank company widgets.
+- No fabricated visuals remain (fake sparklines gone; real history drawn
+  where it exists).
+- The briefing is honest about whether AI wrote it, and the dashboard no
+  longer stalls on AI availability.
+- "Who's In Today" finally surfaces live presence on the dashboard.
+- Mobile/tablet layouts stack properly per the PRD's responsiveness demand.
+
+### Verification
+- `php artisan test` (full suite): **185/185 passing** — up from the
+  178/178 baseline; 7 new tests in `Sprint13DashboardTest` cover
+  section gating by role (founder vs employee, plus PM-scoped sections and
+  director parity), employee task-scoping,
+  the ongoing-project profitability regression, briefing authorization +
+  honest `source: 'system'` in a keyless environment, pending-payroll
+  excluding approved runs, and approved payroll appearing in the cash-flow
+  trends. No regressions.
+- `php -l` clean on all changed backend files.
+- `php artisan route:list --path=reports` confirms clean registration of
+  `GET reports/dashboard/briefing` alongside the existing routes.
+- `npx tsc --noEmit`: clean across the whole frontend.
+- `npx next build`: production build succeeds; all routes compile.
+- No seeder or migration changes were needed (no destructive DB commands).
+- Not manually browser-tested, per this project's standing instruction — the
+  user tests every module manually.
+
+### Next recommended module
+Clients — the audit file's known gaps are the missing `/clients/[id]` detail
+page (breaking cross-linking from Projects/Invoices/Leads) and any remaining
+`res.data.data` unwrapping bugs on the Clients pages.
+
+---
+
+## Module: Clients
+
+**Status:** ✅ production-ready (completed 2026-07-10)
+
+### Scope
+The Clients list page, the new per-client detail page (`/clients/[id]`), the
+new `ClientController` API surface, `ClientCommunicationController`, the
+client pickers on the Quote/Invoice/Project create forms, and client
+cross-linking from Projects, Invoices, and CRM. Audited against the PRD's
+client spec (company, multiple contacts, currency, billing details, active +
+closed projects, revenue history, outstanding amount).
+
+### Findings (root causes, before fixes)
+1. **The whole Clients module was gated on the wrong permissions.** The page's
+   data source was `reports/clients` (requires `reports.view_sales` or
+   `reports.view_financial`) and its edit/invite/delete flows used the Users
+   endpoints (require `users.view`/`users.edit`/`users.create`/`users.delete`).
+   But the sidebar shows Clients to anyone with `clients.view`, and the roles
+   the module is built for hold only `clients.*`: a **sales_exec got a 403 on
+   the entire page**, and a **sales_head could see the list but 403'd on
+   every edit, invite, and delete** — despite the seeder granting them
+   `clients.create/edit/delete` explicitly. The `clients.*` permission strings
+   existed since day one and were checked by nothing.
+2. **The client pickers on Quote create, Invoice create, and Project create
+   only ever worked for founders/directors.** All three built their dropdown
+   via `GET /roles` (requires `roles.view` — held by founder/director only)
+   followed by `GET /users?role_id=…` (requires `users.view`) — so for the
+   very roles those forms exist for (sales creating quotes, finance creating
+   invoices, PMs creating projects) both calls 403'd and the picker rendered
+   silently empty, masked by try/catch-to-empty-array. The CRM
+   convert-to-quote modal's "use existing client" dropdown had the same
+   silent-403 problem via `reports/clients`.
+3. **`ClientCommunicationController` had zero authorization** — any
+   authenticated user (including client portal accounts) could list, create,
+   and delete communication logs for ANY client. Same class as the
+   CreditNoteController gap found in the Invoicing audit.
+4. **No per-client detail page existed** (modal-only), so nothing could
+   cross-link to a client — flagged in the Production Readiness audit as a
+   genuine cross-module gap. Projects, invoices, and converted leads showed
+   client names as plain text.
+5. **The PRD's client fields had no schema at all**: no company name (the
+   "client" was just a user whose `name` doubled as the company), no multiple
+   contacts, no billing address, no tax number, no per-client currency.
+6. The details modal's health-score breakdown showed the word "Applicable"
+   for every deduction row instead of the client's actual numbers — only the
+   outstanding-ratio row was real.
+7. The list page's money columns were presented as all-time ("All project
+   invoice records") but `reports/clients` defaults to the Indian financial
+   year — figures silently excluded anything before April.
+8. Client delete had **no in-use guard** (a client with projects/invoices
+   could be deleted, orphaning them via `nullOnDelete`) and the confirm copy
+   claimed deletion was "permanent" and "cannot be undone" — false: users
+   soft-delete into the founder-restorable Recovery Bin.
+9. The Edit Client modal offered a **Role Assignment dropdown listing every
+   staff role** (founder included) on a client account — role changes belong
+   to the Users module (and its founder-assignment guard), not a client
+   profile form.
+10. `FinancialReportService::getClientSummary` counted only `status='active'`
+    projects as active — `in_progress` ignored (same class as the Dashboard
+    module's finding #10).
+11. The topbar "Quick Create" menu (AppShell) offered all six create actions
+    (New Client, New Invoice, New Project…) to every user regardless of
+    permissions — same "buttons that 403" class, found while wiring the
+    Clients entry.
+12. Invite modal defaulted the initial password to the literal string
+    `"password"` — a footgun the guide itself warned about.
+
+### Fixes applied
+**Backend:**
+- **New `ClientController`** (`GET/POST /clients`, `GET/PUT/DELETE
+  /clients/{client}`, plus `POST/PUT/DELETE /clients/{client}/contacts/…`),
+  gated on the real `clients.*` permission strings. `index` returns the
+  directory with LIFETIME billing aggregates (batched queries, running =
+  active+in_progress) and health scores; `store` creates the client account
+  itself (assigns the `client` role internally, portal access on, welcome
+  email queued, soft-delete-spanning email dedupe — same pattern as
+  `UserController::store`); `update` covers profile/billing/portal and can
+  never touch roles; `destroy` soft-deletes with an in-use guard (422 with a
+  "deactivate instead" message while projects or invoices reference the
+  client). `show` returns the full PRD payload: profile + billing, contacts,
+  projects grouped active/pipeline/closed, latest invoices + quotes with
+  totals, lifetime billed/paid/outstanding, a 12-month billed-vs-collected
+  history, and the health score WITH its real component numbers.
+- **Additive migration**: `users.company_name/billing_address/tax_number/
+  default_currency_id` (nullable; staff rows unaffected) and a new
+  `client_contacts` table (name/email/phone/designation/is_primary) + model —
+  the PRD's "Contacts (Multiple), Currency, Billing Details" finally exist.
+  Primary-contact flag is exclusive (setting one demotes the others).
+- `ClientCommunicationController`: `index`/`store` now require
+  `clients.view`; `destroy` requires `clients.edit` or being the log's own
+  recorder.
+- `RolesPermissionsSeeder`: `finance` gains `clients.view` (they bill
+  clients; the invoice builder needs the directory). Re-run locally
+  (additive `syncPermissions`).
+- `getClientSummary` active-projects definition fixed to include
+  `in_progress`.
+
+**Frontend:**
+- **New `/clients/[id]` detail page**: header with company/status/portal
+  badges and lifetime money KPIs; tabs for Overview (billing details +
+  health breakdown with real per-client numbers + 12-month revenue history
+  chart), Contacts (full CRUD, primary flag), Projects (grouped
+  active/planning-on-hold/closed, rows link to `/projects/{id}`), Invoices
+  and Quotes (rows link to their detail pages, honest "showing latest 25"
+  note), and Communications (log + timeline, moved here from the old
+  slide-over). Edit modal covers company, billing address, tax number,
+  preferred currency (real active-currency list from platform settings),
+  status, and portal access. Delete is `clients.delete`-gated with honest
+  Recovery Bin copy. Dedicated 404/403/error states with a back link.
+- **List page rewired to `clientsApi.list()`**: money columns are now truly
+  lifetime and labeled so; rows navigate to the detail page; Add
+  Client/Edit/Delete/portal-toggle appear only with
+  `clients.create/edit/delete`; the role dropdown is gone from client
+  editing; the invite modal gained a Company field, an 8-char password
+  minimum with no "password" default, and posts to `POST /clients` (no
+  users.create needed); distinct "no clients yet" (action: add first client)
+  vs "no match" (action: clear search) empty states; error banner with
+  retry.
+- **Client pickers fixed on all three create forms** (quotes/create,
+  invoices/create, projects list's create modal) and the CRM convert
+  modal: all now use `clientsApi.list()` (one call, `clients.view`), show
+  company names, and surface a visible error instead of a silent empty
+  dropdown.
+- **Cross-linking**: project detail's client name links to the client page;
+  invoice detail gains a "View client page →" link (print-hidden so the
+  invoice document is unchanged); a converted lead links to the client
+  account it created; the client page links back into projects, invoices,
+  and quotes — the lifecycle chain is navigable in both directions.
+- AppShell's Quick Create menu is now permission-filtered with the same
+  strings the backend enforces (New Expense stays for everyone by design).
+- `api.ts`: full typed surface (`ClientDirectoryData`, `ClientDetail`,
+  `ClientContact`, `ClientUpdatePayload`, …) documenting the interceptor
+  behavior for the `{summary, breakdown}` payload.
+- Onboarding: `HowToUseGuide` rewritten on the list page and added to the
+  detail page (`clients-detail`); HelpIcons on health score (with the exact
+  formula), lifetime-money columns, portal access, currency, primary
+  contact, and password field.
+
+### Remaining issues
+- The health-score formula now lives in two places (`ClientController` and
+  the date-scoped Client 360 report in `FinancialReportService`) — kept in
+  sync manually with comments pointing at each other; consolidating into a
+  shared service is a Module H cleanup candidate.
+- The project create modal's *manager* picker still uses `usersApi.list`
+  (requires `users.view` that PMs don't hold) — same silent-empty class as
+  the client pickers fixed here, but it belongs to the Projects/Users
+  modules; logged for Module D (Users) where an assignable-users decision
+  is needed.
+- Client statuses include `suspended` (users table enum) but nothing
+  server-side blocks a suspended client's portal login beyond the portal
+  access flag — flagged for the Client Portal module's audit (F).
+- Quote detail doesn't render a client block (only the lead link) — its
+  printable layout is quote-focused; left as-is, the chain is reachable via
+  lead → client.
+- `LeadController::convert` doesn't populate the new `company_name` on
+  auto-created client accounts (it sets `name` from the contact) — low
+  priority: it could copy the lead's company; logged for a future CRM touch.
+
+### Performance improvements
+- Directory endpoint batches all aggregates (4 grouped queries total,
+  no per-client queries); the detail endpoint computes totals + 12-month
+  history from one lightweight invoice fetch instead of per-month queries.
+
+### UI/UX improvements
+- Sales and finance roles can actually use the module their sidebar has
+  always advertised (list, invite, edit, delete, pickers).
+- The agency lifecycle is finally traversable: lead → client → quotes →
+  invoices → projects, clickable in both directions.
+- Health score shows this client's real deductions instead of "Applicable".
+- Deleting is guarded and honestly described; deactivation is the promoted
+  path.
+
+### Verification
+- `php artisan test` (full suite): **193/193 passing** — 8 new tests in
+  `Sprint14ClientsTest` covering directory gating (sales_exec 200 / employee
+  403 / finance 200), the detail payload (projects grouping incl.
+  in_progress, totals, 12-month history, health components, staff-id 404),
+  invite gating + client-role assignment + welcome mail, update gating +
+  billing persistence + role-injection immunity, the delete in-use guard +
+  soft delete, contact CRUD + exclusive primary flag, and the
+  communications authorization regression. One pre-existing test
+  (`Sprint10ClientCompletionTest::test_client_communications_crud`) was
+  updated to the new contract — it previously exercised communications
+  CRUD as a plain employee, i.e. it asserted the unauthorized access
+  this module closed; it now asserts the employee 403 and runs the CRUD
+  as a sales exec. No other changes across the suite.
+- `php -l` clean on all changed/added backend files.
+- `php artisan migrate` applied the additive migration cleanly (no
+  destructive commands); `php artisan route:list --path=clients` shows all
+  12 module routes registered cleanly.
+- Re-ran `RolesPermissionsSeeder` (additive) for the finance grant.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds;
+  `/clients/[id]` compiles alongside all existing routes.
+- Not manually browser-tested, per this project's standing instruction — the
+  user tests every module manually.
+
+### Next recommended module
+Services & Packages — the known package `discount_type`/`discount_value`
+persistence bug is next, and quotes/invoices consumption of catalog data can
+now be verified against a client chain that works end-to-end.
+
+---
+
+## Module: Services & Packages
+
+**Status:** ✅ production-ready (completed 2026-07-10)
+
+### Scope
+The Service Catalog page (services + bundled packages), `ServiceController`/
+`ServiceCategoryController`/`PackageController`, the `Package`/`PackageService`
+models, and how the catalog is consumed downstream. Audited against the PRD's
+Service Catalog and Packages sections.
+
+### Findings (root causes, before fixes)
+1. **Package `discount_type`/`discount_value` didn't persist** (the known bug
+   this module's audit was commissioned to fix). The backend stored only the
+   final `price`; the page then fabricated `discount_type: 'fixed'` and a
+   derived difference on every reload — a package saved with a 15% discount
+   silently redisplayed as a fixed-amount discount, and the on-page help text
+   documented the lie as a quirk.
+2. **New packages were hardcoded to `currency_id: 1` with a `// Default to
+   INR` comment** — the exact guessed-id class of bug already fixed on the
+   Expenses module's currency pickers. A platform whose default currency isn't
+   row id 1 would silently save every package in the wrong currency.
+3. **All three catalog queries swallowed failures** (`try/catch` → `[]`), so
+   an outage rendered as an empty catalog with no error state. (The
+   Production Readiness audit had recorded these as fixed — they weren't; the
+   masking was still in the code.)
+4. **Every manage affordance ignored `services.manage`**: "New Service",
+   "New Package", and the per-card edit/delete buttons rendered for anyone
+   who could open the page (services.view — sales roles, PMs), but the
+   backend 403s all of it without `services.manage` (founder/director only).
+5. `Package::packageServices` and `Service::packageServices` were
+   modeled-but-unused `HasMany` accessors (the real relation goes through the
+   `services()` BelongsToMany using `PackageService` as its pivot class) —
+   the flagged dead relations for this module.
+6. Packages exist in the catalog but are not insertable into quotes or
+   invoices anywhere — see Remaining issues (the quote builder consumes
+   individual services correctly; nothing in the UI falsely implies package
+   insertion works).
+
+### Fixes applied
+**Backend:**
+- Additive migration: `packages.discount_type` (nullable string) and
+  `packages.discount_value` (decimal, default 0). Legacy rows keep NULL
+  discount_type. Model fillable/casts updated; `PackageController`
+  store/update validate (`in:percentage,fixed`, `min:0`) and persist both;
+  `PackageResource` exposes them.
+- Removed the two unused `packageServices` HasMany accessors (the
+  `PackageService` pivot class itself remains in use by the real relation).
+
+**Frontend (`services/page.tsx`, `api.ts`):**
+- The packages query now trusts the stored `discount_type`/`discount_value`;
+  only legacy NULL rows fall back to the derived fixed-amount display. The
+  package card's "Bundled Special" figure now reads the stored `price`
+  directly instead of recomputing it.
+- The package form submits the discount fields, and new packages use the
+  platform's real default currency (from `/settings`) instead of id 1;
+  editing preserves the package's existing currency.
+- The three catalog queries surface real errors (page-level banner) instead
+  of masking outages as an empty catalog.
+- "New Service"/"New Package" and all edit/delete card actions now render
+  only for `services.manage` holders — matching what the backend enforces.
+- Help text updated: the guide and the discount HelpIcon now say discounts
+  persist exactly as entered (the "redisplays as fixed" quirk documentation
+  is gone because the quirk is gone).
+- `Package` type in `api.ts` gained the real backend fields
+  (`price`, `currency_id`, `billing_cycle`, nullable-on-legacy discount doc).
+
+### Remaining issues
+- **Packages cannot be inserted into a quote or invoice** — the quote builder
+  consumes individual catalog services (correctly, with GST per service), but
+  there is no "add package" affordance anywhere, so packages are effectively
+  a price-list display. Nothing in the UI pretends otherwise, so this is an
+  honest feature gap rather than a broken promise: building it means deciding
+  how a bundle discount maps onto quote line items (per-line discount_percent
+  vs a single bundle line). Flagged as the natural next feature for this
+  module.
+- The seeded catalog is a 6-service starter set, not the PRD's full ~30
+  master-service list. The PRD's three master categories exist (as "Digital
+  Marketing" / "Development" / "Branding", plus a "Copywriting" extra), and
+  services are fully user-manageable through the UI — the catalog is business
+  data the team curates, so the full PRD list was NOT force-seeded into the
+  live database. If the user wants it pre-loaded, an additive
+  `firstOrCreate` seeder can be added on request.
+- Package deletion has no in-use guard, but nothing references packages yet
+  (see the first item) — revisit when packages become insertable.
+
+### Performance improvements
+- None needed — catalog queries are small and eager-load currency/services.
+
+### UI/UX improvements
+- A percentage-discount package finally survives a reload as a percentage.
+- Wrong-currency packages can no longer be created silently.
+- Catalog outages are visible instead of masquerading as an empty catalog.
+- Users who can't manage the catalog no longer see buttons that would 403.
+
+### Verification
+- `php artisan test` (full suite): **197/197 passing** — 4 new tests in
+  `Sprint15ServicesPackagesTest`: percentage discount survives reload (+
+  update to fixed persists), legacy NULL-discount rows still serve, invalid
+  discount_type 422s, and the services.manage boundary (employee 403 on
+  browse, sales_exec browses but can't create). No regressions.
+- `php -l` clean on all changed backend files; `php artisan migrate` applied
+  the additive packages migration cleanly.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Next recommended module
+Users, Departments & Roles (verification pass) — includes the deferred
+decision on `User::subordinates` reporting lines, the Compensation tab loop,
+and the phantom `super-admin` in `RoleController`.
+
+---
+
+## Module: Users, Departments & Roles (verification pass)
+
+**Status:** ✅ production-ready (completed 2026-07-10)
+
+### Scope
+A verification-and-completion pass over the people-management surface, per
+the completion directive: Users list/detail/create/edit vs the PRD
+(multi-role, multi-department, many-to-many reporting), the Compensation tab
+loop, the phantom `super-admin` in `RoleController`, and re-confirming the
+Sprint-12 privilege-escalation protections. (Roles & Permissions itself was
+rewritten in the Production Readiness audit and needed no rework.)
+
+### Findings (root causes, before fixes)
+1. **Reporting lines existed only at creation.** `UserController::store`
+   accepted `manager_ids` and synced the `manager_relationships` pivot, and
+   `UserResource` returned `managers` — but `update()` silently ignored
+   `manager_ids` (a reporting line could never be changed after creation),
+   the create path flagged EVERY manager `is_primary` (making the flag
+   meaningless), nothing prevented self-reporting, and **no UI anywhere
+   collected or displayed managers** — the PRD's many-to-many reporting was
+   backend-only dead weight. `User::subordinates` remains the inverse
+   accessor of the now-fully-wired `managers` relation.
+2. **`RoleController` protected a phantom `super-admin` role** in three
+   guard lists (`update`/`destroy`/`syncPermissions`) — never seeded,
+   flagged in the Production Readiness audit.
+3. **`resetPassword` used role-name matching** (`hasAnyRole(['founder',
+   'director', 'hr'])`) instead of the permission system — the exact
+   anti-pattern eliminated everywhere else; equivalent access lives on
+   `users.edit`.
+4. The Payroll audit's flagged "fix a typo" affordance was still missing:
+   the Salary Setup modal always created a NEW versioned compensation
+   record, even when opened from an existing row — correcting a data-entry
+   mistake polluted the salary history with a bogus "revision". (The Users
+   detail page's Compensation tab had already been rewired to the in-place
+   `update` endpoint for TDS/PF/ESI during the Production Readiness pass —
+   verified working.)
+5. The user detail Profile tab showed only email/employee-id/phone — no
+   roles, departments, or reporting lines, despite the PRD treating those
+   as the core of a person's record.
+
+### Fixes applied
+**Backend:**
+- `UserController::update` now syncs `manager_ids` (validated, privileged
+  behind the same `users.edit` gate as role/department changes — the
+  self-profile bypass never reaches it); both create and update drop
+  self-reporting and flag only the FIRST listed manager as the primary
+  reporting line.
+- `RoleController`: phantom `super-admin` removed from all three guards
+  (founder-role protection unchanged).
+- `resetPassword` gates on `hasPermissionTo('users.edit')` — identical
+  effective access (founder/director/hr), now permission-driven.
+
+**Frontend:**
+- `UserFormModal` gained a **Reports To** multi-select (active staff only,
+  client portal accounts and the edited person excluded, first pick labeled
+  PRIMARY, HelpIcon explaining multi-manager reporting); prefills from the
+  user's real managers via the show endpoint (the list payload doesn't carry
+  them) and submits `manager_ids` on both create and update.
+- The user detail Profile tab now shows roles, departments, and "Reports To"
+  (with an honest "No reporting line set" empty value).
+- **Payroll Salary Setup**: opening an existing record now offers an explicit
+  choice — "New salary record (pay change — keeps history)" vs "Correct this
+  entry (fix a typo — no new version)", the latter finally wiring
+  `EmployeeCompensationController::update` from the payroll page. The
+  employee picker locks during a correction and the submit button says which
+  of the two actions it will take.
+- `api.ts`: `manager_ids` on Create/Update payload types, `managers` on the
+  `User` type.
+
+### Verified (no changes needed)
+- Multi-role and multi-department assignment work end-to-end (modal
+  checkboxes → `syncRoles`/`syncDepartments`, first department primary).
+- Founder-role assignment protection, the `users.edit` gate on
+  role/department changes, and the self-service profile-edit bypass all hold
+  — `Sprint12ProductionReadinessTest` still green.
+- The Compensation tab loop (view current → in-place TDS/PF/ESI correction →
+  versioned records from Payroll's Salary Setup) works against the real API.
+
+### Remaining issues
+- The project create modal's **manager picker** (and the Users page itself)
+  rely on `usersApi.list`, which requires `users.view` — a project_manager
+  creating a project sees an empty manager dropdown (silent 403 → []). The
+  right fix is a scoped "assignable staff" endpoint or a considered
+  permission grant; deferred to Module H's final sweep with this note rather
+  than hastily granting PMs user-directory access.
+- Reporting lines are assignable and visible, but no org-chart or
+  "my team" view consumes `User::subordinates` yet — the PRD's reporting
+  structure is now functional (assign + display); a visualization is a
+  future feature, not a broken promise.
+- `resetPassword` responses don't force portal-token invalidation — noted
+  for the security sweep (Module H) alongside the existing
+  change-password-revokes-tokens behavior.
+
+### Performance improvements
+- None needed; user queries were already paginated with eager loads.
+
+### UI/UX improvements
+- Reporting lines are finally a real, editable part of a person's record.
+- Fixing a salary typo no longer fabricates a fake pay-change history entry.
+- The profile page tells you who someone is (roles/departments/manager), not
+  just how to email them.
+
+### Verification
+- `php artisan test` (full suite): **200/200 passing** — 3 new tests in
+  `Sprint16UsersRolesTest`: manager sync on update (dedupe of self, primary
+  = first, employee 403), password-reset permission gating (hr 200,
+  employee 403), and founder-role protection after the phantom removal.
+  No regressions (Sprint12's escalation tests included).
+- `php -l` clean on all changed backend files.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- No migrations or seeder changes; no destructive DB commands.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Next recommended module
+AI Assistant & Automations — honest AI-enabled states everywhere, pagination
+on `listConversations`, and truthful automation types.
+
+---
+
+## Module: AI Assistant & Automations
+
+**Status:** ✅ production-ready (completed 2026-07-11)
+
+### Scope
+The AI chat page (`/ai`), automations (`/ai/automations`), `AiController`,
+`AiAutomationController`, `AiAutomationObserver`, and how the app represents
+AI availability everywhere (`GEMINI_API_KEY` is env-only by design — see the
+Settings module's product note).
+
+### Findings (root causes, before fixes)
+1. **Nothing told the user whether a real AI model was connected.** With no
+   API key, `GeminiService` silently degrades to a canned "simulator"
+   response — the chat page presented itself identically either way ("AI
+   Operating Assistant"), and only the simulator's own reply text admitted
+   the truth after you'd already sent a message. There was no API to even ask
+   "is AI real right now?".
+2. **`listConversations` was unbounded** (flagged in the Production
+   Readiness audit) — every conversation a user ever created came back in
+   one response, growing forever.
+3. **Automations gave no evidence of ever running.** No last-run timestamp,
+   no counter, no log — a rule that never fired (e.g. a condition typo) was
+   indistinguishable from one firing daily. The directive's "testable
+   automations" requirement had nothing to stand on.
+4. **The `create_task` automation action defaulted to `project_id ?? 1`** —
+   with no project configured, tasks were silently created inside whatever
+   project happened to have id 1 (or threw FK errors swallowed by the
+   catch-all). It also never set `created_by`.
+5. **A `task.created` rule with a `create_task` action would loop forever**
+   — the created task re-fired the observer, which re-matched the rule.
+   Nothing guarded against the cascade.
+6. **Deleting a conversation had no confirmation** — the trash icon
+   permanently dropped a chat and its history in one click (the same gap
+   fixed for automations in the Production Readiness pass, missed for
+   conversations).
+7. Verified fine (no changes): the automation picker only offers the
+   trigger events and the two actions the observer really implements — no
+   decorative options to remove; chat/file-upload error toasts (added in the
+   Production Readiness pass) are still wired; sidebar/topbar/palette gating
+   on `NEXT_PUBLIC_AI_ENABLED` holds; conversation previews eager-load.
+
+### Fixes applied
+**Backend:**
+- **New `GET /ai/status`** → `{enabled, configured, model}` where
+  `configured` uses `GeminiService::isConfigured()` (added in the Dashboard
+  module) — true only when a real model call is possible.
+- `listConversations` now paginates (default 50/page, capped 100), pinned
+  first then most recent.
+- `AiAutomationObserver`:
+  - Additive migration adds `last_triggered_at` + `trigger_count` to
+    `ai_automations`; every successful execution stamps both (quietly, no
+    event cascade) and writes an `ai_audit_logs` row
+    (`automation_executed`) — a real activity trail.
+  - `create_task` now REQUIRES a valid `project_id` (skips with a warning
+    log instead of guessing project 1) and sets `created_by`.
+  - Re-entrancy guard: records created by an automation never trigger
+    further automations — the task.created → create_task infinite loop is
+    closed.
+
+**Frontend:**
+- Chat header shows an honest state: "Simulation mode — no AI model
+  connected" plus a warning chip with a HelpIcon explaining exactly why
+  (no `GEMINI_API_KEY`) and that replies are canned demos — vs the normal
+  assistant state when a model is configured.
+- Conversations sidebar consumes the paginated response; when more than one
+  page exists it says "Showing your 50 most recent chats — use search to
+  find older ones" instead of silently truncating.
+- Automations page: each rule shows "Ran N times · last on {date}" or "Has
+  not fired yet — it runs the next time its trigger event happens", with a
+  HelpIcon giving the most common reason a rule never fires (condition
+  value mismatch). This is the honest testability signal the directive
+  asked for.
+- Conversation deletion now goes through a `ConfirmModal`.
+- `api.ts`: `aiApi.status()` + `AiStatus` type; paginated
+  `listConversations` typing; `last_triggered_at`/`trigger_count` on
+  `AiAutomation`.
+
+### Remaining issues
+- A "dry-run/preview" button for automations was considered and NOT built:
+  the observer's real side effects (create a task, send an alert) can't be
+  previewed without executing them, and simulating the condition check
+  against a hand-picked record is a bigger feature than the activity trail
+  the directive's intent (can I tell it works?) required. The last-run
+  trail + audit log rows cover that intent; a sandboxed dry-run is logged
+  as a future feature.
+- `voiceTalk` and chat rely on the same GeminiService degradation — in
+  simulation mode the voice call also produces canned output; the header
+  banner covers the whole page, so no separate voice-specific state was
+  added.
+- AI configuration remains env-only (`GEMINI_API_KEY`) — unchanged, per the
+  Settings module's recorded product decision.
+
+### Performance improvements
+- Conversation list no longer grows unbounded (pagination).
+
+### UI/UX improvements
+- Users can finally tell real AI from simulation before typing anything.
+- Automations prove they run (or clearly say they never have).
+- No more one-click permanent chat deletion.
+
+### Verification
+- `php artisan test` (full suite): **204/204 passing** — 4 new tests in
+  `Sprint17AiTest`: pagination shape, keyless status honesty
+  (`configured: false` in testing), automation firing stamps
+  last_triggered_at/trigger_count + alert + audit log, and the
+  create_task project guard + cascade protection (exactly one chained task,
+  no ghost task, no infinite loop). No regressions.
+- `php -l` clean on all changed backend files; additive migration applied
+  cleanly; `php artisan route:list` clean for `GET ai/status`.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Next recommended module
+Client Portal — read-only scope verification, staff-token 403 regressions,
+and client-presentable polish.
+
+---
+
+## Module: Client Portal
+
+**Status:** ✅ production-ready (completed 2026-07-11)
+
+### Scope
+Portal login, dashboard, project list/detail (status, milestones, completion
+%), invoices and payment history, `PortalController`, the portal token model,
+and client-facing copy — against the PRD's strictly read-only portal scope.
+
+### Findings (root causes, before fixes)
+1. **Portal tokens could call the entire staff API.** Portal logins issue
+   Sanctum tokens scoped `['portal:read']` and staff logins `['*']` — but no
+   route ever checked token abilities, so the scoping was decorative: a
+   client's portal token could hit every staff endpoint, gated only by
+   whatever each policy happened to allow the `client` role (which the
+   seeder grants `projects.view`/`tasks.view`/`invoices.view`), including
+   oddities like clocking in on the attendance system. The reverse direction
+   (staff tokens → portal routes) was closed in the Production Readiness
+   audit; this direction never was.
+2. **Suspending or deactivating a client did not lock them out of the
+   portal.** Login checked only the role and the portal-access flag — the
+   `status` field the Clients page sets (`inactive`/`suspended`) was never
+   consulted, and an already-issued token kept working regardless. (Flagged
+   in the Clients module audit.)
+3. **Clients could see internal draft invoices.** `PortalController::invoices`
+   listed every invoice on the account with no status filter — drafts and
+   pending-approval invoices (internal workflow states with potentially
+   unfinished amounts) appeared in the client's payment history.
+4. **The project page's status chip leaked internal jargon**: project
+   statuses (`planning`, `active`, `on_hold`) fell through the task-status
+   map to raw enum text like "on_hold".
+5. **No "contact your account manager" path existed** — the guide text told
+   clients to contact their project manager, but nothing on any portal page
+   said who that was or how to reach them (the detail endpoint already
+   loaded `manager`, unrendered).
+6. Verified fine (no changes): the portal axios interceptor fix holds
+   (milestones/meta preserved — regression-tested); task/milestone status
+   chips already use plain-language labels matching the REAL task enum
+   (todo/in_progress/review/blocked/done); pagination works; mobile layout
+   uses fluid max-widths; the login/dashboard/detail pages have client-facing
+   guides from the Onboarding pass.
+7. **Found in passing — a cross-module data bug**: the task status enum is
+   `done`, not `completed`, yet `ReportController` (Dashboard module)
+   filtered on `'completed'` everywhere — "Tasks Done" in Team Performance
+   has always been 0, and overdue-task counts included finished tasks. Fixed
+   here (whereNotIn ['done','cancelled'] for open/overdue; 'done' for
+   completed counts) because Module A's tests were written against the same
+   wrong constant; also fixed the AI tool schema advertising the
+   non-existent `in_review`/`completed` statuses.
+
+### Fixes applied
+**Backend:**
+- New `EnsureStaffToken` middleware on both staff route groups: requests
+  bearing a token that can't `staff-api` (i.e. anything but a `['*']` staff
+  token) get an explicit 403 — portal sessions are now locked to the portal
+  routes. Test logins via `actingAs` (no token) are unaffected.
+- `PortalController::login` and `assertIsPortalClient` now require
+  `status === 'active'` — suspension blocks new logins AND kills existing
+  sessions on their next request, with a message pointing the client to
+  their account manager.
+- `PortalController::invoices` only returns issued invoices
+  (`sent`/`partially_paid`/`paid`/`overdue`).
+- `ReportController` task-status corrections + GeminiService tool-schema
+  status list (finding #7).
+
+**Frontend:**
+- Project status chip now has a client-facing project map ("Getting
+  Started", "In Progress", "On Hold", "Completed", "Closed").
+- New "Your account manager" block on the project page: manager name plus a
+  one-click "Send a message →" mailto (pre-filled subject with the project
+  name) — the concrete contact path the PRD's client-service intent needs.
+- `PortalProject` type gained the `manager` field.
+
+### Remaining issues
+- Payments surface as `payments` inside each invoice (amount/date/method) —
+  a dedicated "payment history" page wasn't added since the invoice cards
+  already render payment state; flagged as polish-not-gap.
+- The portal has no notification/email surface (nothing pretends otherwise);
+  invoice-sent emails belong to Module G's notifications backlog.
+- `cancelled`/`void` invoices are hidden from the portal along with drafts —
+  if the business wants clients to see a cancelled-after-sending invoice,
+  that's a one-line status-list change; defaulted to hiding.
+
+### Performance improvements
+- None needed — portal queries are paginated with eager loads.
+
+### UI/UX improvements
+- Clients see only client-language statuses and only real, issued invoices.
+- Every project page now says who your account manager is and how to reach
+  them.
+- A suspended account gets an honest, actionable message instead of
+  continuing to browse.
+
+### Verification
+- `php artisan test` (full suite): **207/207 passing** — 3 new tests in
+  `Sprint18PortalTest`: suspended-client lockout (new logins + existing
+  token), portal tokens 403 on staff endpoints (projects, dashboard,
+  clock-in) while portal routes still work and staff tokens are unaffected,
+  and draft/pending invoices never reaching the portal. The pre-existing
+  staff→portal 403 regression tests stay green.
+- `php -l` clean on all changed backend files.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Next recommended module
+Cross-cutting completion (Module G): notifications backlog, scheduled jobs
+(overdue sweep, recurring invoices, task templates), leave↔attendance link,
+chat honesty check, and the unreachable-endpoint decisions.
+
+---
+
+## Module: Cross-cutting completion (notifications, scheduler, templates, deferred decisions)
+
+**Status:** ✅ complete (2026-07-11)
+
+### Scope
+The flagged-but-deferred backlog from every prior module: the three unwired
+notification events, the missing scheduled jobs, the leave↔attendance link,
+the internal-communication honesty check, the unreachable-endpoint decisions,
+and the `InvoiceResource` approvals array.
+
+### 1. Notifications
+- New `NotificationService` centralizes preference semantics: **email is
+  opt-in** (a saved row with email=true — the default the existing
+  task_assigned mail always used) and **in-app alerts are opt-out** (on
+  unless a saved row disables them).
+- **lead_assigned**: `LeadObserver` now sends a real email (new
+  `LeadAssignedMail` + template) on assignment AND reassignment, opt-in via
+  preference; its in-app alerts are gated by the in_app preference.
+- **invoice_overdue**: new `invoices:mark-overdue` command (scheduled daily
+  06:00) flips `sent`/`partially_paid` invoices past due date to `overdue`
+  — the missing sweep flagged in the Invoicing audit (drafts/pending never
+  flip; they aren't billed). Each flip alerts the invoice owner (in_app
+  gated) and emails them if opted in (`InvoiceOverdueMail`). It runs BEFORE
+  the pre-existing `invoices:send-reminders` (which only ever looked at
+  status=overdue and therefore had been starved of new overdue invoices).
+- **payment_received**: recording a payment now alerts + optionally emails
+  the invoice owner (`PaymentReceivedMail`) when someone ELSE records it
+  (no self-notifications).
+- The Notification Settings page re-grew honestly: 6 events, an Email
+  column on all of them, and an In-App column only on the three events that
+  actually produce a gated alert (the other three show a dash with an
+  explanatory tooltip — they are email-only events). Saved in_app values
+  round-trip through the existing controller (which always persisted them).
+  Alerts for other activity (quote approvals, stage changes) remain
+  always-on and the guide says so.
+
+### 2. Scheduled jobs
+- Discovered during audit: recurring-invoice generation ALREADY existed and
+  was scheduled (`invoices:process-recurring` — replicates the parent with
+  items, correct next-date math), contrary to the earlier audit note; only
+  the overdue sweep was genuinely missing (added above). Schedule is now:
+  mark-overdue 06:00 → process-recurring 06:10 → send-reminders 06:20,
+  plus `projects:generate-recurring-tasks` monthly on the 1st (below).
+  ~~`GenerateRecurringInvoices` (an unregistered older duplicate of
+  process-recurring) is flagged for deletion in the final cleanup.~~
+  **CORRECTION (Module H):** not a duplicate. It generates invoices from
+  `RecurringBillingRule` records (Sprint 4 rule-based billing, its own table
+  + CRUD API + 4 tests), while `invoices:process-recurring` handles the
+  separate invoice-level `is_recurring` flag (Sprint 9). Deleting it broke
+  the Sprint 4 scheduler tests; it was restored and is now scheduled daily
+  at 06:05. Do not delete either command.
+- **Task templates (PRD core promise) built end-to-end.** The
+  `task_templates`/`task_template_items` schema existed since Sprint 5 with
+  zero API or UI. Now: `TaskTemplateController` (list for anyone with
+  project visibility; create/update/delete gated on `projects.create`),
+  additive migration linking `projects.task_template_id` (a recurring
+  project's monthly recipe) and `tasks.task_template_id` (origin marker +
+  idempotence), `POST /projects/{project}/apply-template` (projects.edit)
+  creating one task per item, and the monthly command generating a linked
+  template's tasks (suffixed with the month, due end-of-month) for every
+  running recurring project — idempotent per calendar month. Frontend: an
+  "Apply Template" action on the project Tasks tab with template preview,
+  inline template creation (one task per line), and a "re-create monthly"
+  option shown for retainer projects.
+
+### 3. Leave ↔ Attendance
+- Approving a leave request now creates `status='leave'` attendance records
+  for every covered date. Days that already have ANY record are left
+  untouched — an HR-set status or a real clock-in is never overwritten
+  (the guard the Attendance audit asked for).
+
+### 4. Internal communication (honesty check)
+- Audited: **no chat UI exists anywhere** — nothing pretends to be project
+  chat, team chat, or DMs, so there is nothing to remove. The AlertsDrawer
+  (real, working) is the notification center. Chat is recorded here as an
+  explicit Phase-Next feature. **Recommended architecture** when built:
+  Laravel Reverb (already configured in `config/reverb.php` and documented
+  in `.env.example`) over private channels per project/team/DM pair;
+  messages persisted in a `messages` table (sender, channel type+id, body,
+  read receipts), broadcast via Echo on the frontend; unread counts fold
+  into the existing Alerts Center rather than a new popup system, matching
+  the PRD's "no popup spam" rule.
+
+### 5. Unreachable endpoints — decisions
+- `AuthController::logoutAll` — **wired**: a "Sign out of all devices"
+  section on Settings → Change Password (ConfirmModal, then revokes every
+  token and returns to login). Product-wise it belongs exactly there.
+- `CreditNoteController::show` — **removed** (route narrowed to
+  index/store): credit notes render from the invoice context; nothing ever
+  needed a single-credit-note fetch.
+- `PaymentController::show` — **removed** (route narrowed to
+  index/destroy): no consumer for a single-payment fetch; the stale api.ts
+  wrapper deleted.
+- `PaymentController::destroy` — **kept and wired**: finance correcting a
+  mis-entered payment is a real need. The invoice detail's payment history
+  now shows a remove action for `invoices.delete` holders, with a
+  ConfirmModal explaining the balance recalculation (the Payment model's
+  delete event already recalculates paid/due/status).
+
+### 6. InvoiceResource approvals
+- `InvoiceResource` now exposes `approvals` (action, actor id+name, notes,
+  timestamp) when loaded; the invoice `show` endpoint loads
+  `approvals.actor`. The invoice detail page's approval-history timeline —
+  which had rendered "no actions logged" since the Invoicing audit —
+  finally displays the real workflow trail.
+
+### Remaining issues
+- Push notifications remain unbuilt (no transport exists) — unchanged,
+  honestly absent from the settings page.
+- The overdue sweep and recurring generation require the scheduler cron
+  (`php artisan schedule:run`) in production — called out for the README in
+  the final cleanup module.
+- Recurring monthly tasks are created unassigned (creator = project
+  manager); auto-assignment per template item is a future refinement.
+
+### Verification
+- `php artisan test` (full suite): **214/214 passing, 981 assertions** — 7
+  new tests in `Sprint19CrossCuttingTest`: the sweep flips sent→overdue but
+  never drafts + alerts the owner; in_app opt-out suppresses the alert;
+  payment_received alerts + emails the owner on someone else's recording
+  (opt-in honored); lead-assignment email is opt-in while its alert
+  defaults on; approved leave creates leave-status attendance records
+  without overwriting an HR-set day; template CRUD gating + apply +
+  idempotent monthly generation (4 tasks, no doubles, 8 after a month
+  rolls); and the invoice approvals timeline payload. No regressions.
+- `php -l` clean on all changed/added backend files; both additive
+  migrations applied cleanly; `php artisan route:list` clean (task-template
+  routes registered; credit-notes show and payments show gone).
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Next recommended module
+Final production cleanup & Release Candidate 1.
+
+## Module: Final cleanup — Release Candidate 1 (2026-07-11)
+
+### 1. Recurring-invoice command: a cleanup near-miss, caught by the gate
+- The Cross-cutting module's audit had flagged `GenerateRecurringInvoices`
+  as "an unregistered older duplicate of process-recurring" and this
+  module's cleanup deleted it. The final full-suite gate then failed
+  210/214: the two commands are NOT duplicates.
+  `creativals:generate-recurring-invoices` generates invoices from
+  **`RecurringBillingRule`** records (Sprint 4 rule-based billing — own
+  table, items, `next_generation_date` advancement, end-date deactivation,
+  full CRUD API at `/api/v1/recurring-billing-rules`, 4 scheduler tests),
+  while `invoices:process-recurring` handles the separate invoice-level
+  `is_recurring` flag (Sprint 9). The command was restored from git,
+  **scheduled daily at 06:05** (it had never been scheduled — the rule
+  system was API-complete but dormant), and the erroneous audit note was
+  corrected in place so the stale deletion flag can't be acted on again.
+  Note: the rule system has no frontend UI (API-only); building one is a
+  Phase-Next candidate.
+
+### 2. Production-readiness follow-ups
+- Payroll cost-allocation endpoint (`PayrollRunController::costAllocation`)
+  now caches for 60 seconds, matching the reporting layer's convention —
+  this was the one flagged exception in the Production Readiness audit.
+- Security sweep: no hardcoded secrets/API keys in tracked files (real
+  config lives in git-ignored `.env` files); `APP_DEBUG=true` appears only
+  in local-default env files and the README's deploy steps require
+  `APP_DEBUG=false` in production.
+
+### 3. Status-badge consolidation
+- New `frontend/src/components/ui/StatusBadge.tsx` is the single home for
+  document status → badge mapping (invoice, quote, project, expense maps;
+  unmapped statuses fall back to a muted badge showing the raw value).
+  The Invoices list + detail, Quotes list,
+  and Profitability pages now use it instead of their previously
+  duplicated inline maps (flagged in the Production Readiness audit) —
+  labels/classes byte-identical, so nothing visibly changes.
+
+### 4. Deployment documentation
+- New root `README.md`: local dev (`start-local.bat`, the non-negotiable
+  database-safety rules, the three-step verification gate) and a full VPS
+  production outline — backend env requirements, **queue worker +
+  scheduler cron marked REQUIRED** (without them emails never send and
+  invoices never flip overdue), Next.js build-time env warning, nginx/TLS,
+  backups (including the in-app Backups & Recovery surface), first login,
+  and an operations quick-reference table.
+- `frontend/.env.example` documents every `NEXT_PUBLIC_*` variable,
+  including the build-time inlining trap. Discovered in the process that
+  frontend `.gitignore`'s `.env*` rule swallowed `.env.example` itself —
+  the file the README tells deployers to copy would not exist in a fresh
+  clone. Added a `!.env.example` negation and sanitized the template to
+  placeholder hosts (the real deployment host stays in the git-ignored
+  `.env` / `.env.local`).
+
+### Verification
+- `php artisan test` (full suite, final gate): **214/214 passing,
+  981 assertions** — including the four restored Sprint 4 scheduler tests.
+- `npx tsc --noEmit`: clean. `npx next build`: production build succeeds.
+- Not manually browser-tested, per this project's standing instruction.
+
+### Release Candidate 1 — known limitations / Phase Next
+The application is feature-complete against the PRD's core lifecycle
+(Lead → Quote → Approval → Invoice → Client → Project → Tasks → Time
+Tracking → Cost Allocation → Profitability → Reporting) plus portal, AI,
+payroll, and settings surfaces. Deferred items, recorded honestly:
+- **Team/client chat** — unbuilt; recommended Reverb architecture recorded
+  in the Cross-cutting module entry.
+- **Push notifications** — no transport exists; the settings page honestly
+  omits them.
+- **Department profitability** — reporting is per-project/client only.
+- **Packages inside quotes** — packages exist as a catalog; quote line
+  items don't reference them yet.
+- **Recurring billing rules UI** — backend + scheduler complete (see §1),
+  no frontend surface.
+- **Recurring monthly task assignment** — generated tasks are unassigned;
+  per-template-item auto-assignment is a refinement.
