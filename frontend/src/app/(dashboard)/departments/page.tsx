@@ -324,8 +324,9 @@ export default function DepartmentsPage() {
     queryKey: ['departments'],
     queryFn: async () => {
       try {
-        const res = await deptApi.list();
-        return res.data as Department[];
+        const res = await deptApi.list({ per_page: 100 });
+        const payload = res.data as any;
+        return (Array.isArray(payload) ? payload : (payload?.data ?? [])) as Department[];
       } catch { return []; }
     },
   });

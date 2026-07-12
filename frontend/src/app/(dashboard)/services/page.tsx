@@ -1,15 +1,20 @@
+
 'use client';
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { services as servicesApi, serviceCategories as categoriesApi, packages as packagesApi, platformSettings, getApiErrorMessage } from '@/lib/api';
 import type { Service, ServiceCategory, Package } from '@/lib/api';
-import { Plus, Edit2, Trash2, X, Package as PackageIcon, Percent, Layers, Tag, Check, HelpCircle, AlertCircle } from 'lucide-react';
+import { 
+  Plus, Edit2, Trash2, X, Package as PackageIcon, Percent, Layers, Tag, Check, 
+  HelpCircle, AlertCircle, Search, SlidersHorizontal, Megaphone, Code, Palette, 
+  PenTool, Box, ExternalLink, Lightbulb, CircleDollarSign
+} from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
-import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { HowToUseGuide, GuideBody } from '@/components/ui/HowToUseGuide';
 
 const SERVICES_HOWTO = {
   overview: 'The Service Catalog is your company price list. A Service is one thing you sell (with a base price, a billing unit, and a GST rate), and a Package bundles several services together at a discount. Quotes and invoices pull their line items and prices from what you set up here, so keeping it accurate keeps client pricing consistent.',
@@ -28,7 +33,7 @@ const SERVICES_HOWTO = {
       items: [
         'A service’s Base Price is the pre-tax price for one unit (one hour, one month, one post…). GST is added on top when it is quoted or invoiced.',
         'A package starts at the sum of its services’ base prices; your discount is applied into a single final "Bundled Special" price.',
-        'The discount saves exactly as you set it \u2014 a 15% discount still reads 15% when you reopen the package.',
+        'The discount saves exactly as you set it — a 15% discount still reads 15% when you reopen the package.',
         'Use the category filter chips at the top of the Services tab to jump straight to one category.',
       ],
     },
@@ -51,35 +56,153 @@ const SERVICES_HOWTO = {
   ],
 };
 
+const getCategoryStyle = (name: string) => {
+  if (!name) name = '';
+  const lower = name.toLowerCase();
+  if (lower.includes('marketing') || lower.includes('seo') || lower.includes('digital') || lower.includes('social')) {
+    return {
+      color: 'violet',
+      borderClass: 'border-l-4 border-l-violet-500',
+      bgLight: 'bg-violet-50 dark:bg-violet-900/20',
+      textClass: 'text-violet-600 dark:text-violet-400',
+      iconBgStyle: { backgroundColor: 'rgba(139, 92, 246, 0.1)' },
+      iconColor: '#8b5cf6',
+      badgeClass: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
+      Icon: Megaphone
+    };
+  }
+  if (lower.includes('dev') || lower.includes('code') || lower.includes('software') || lower.includes('web') || lower.includes('tech')) {
+    return {
+      color: 'emerald',
+      borderClass: 'border-l-4 border-l-emerald-500',
+      bgLight: 'bg-emerald-50 dark:bg-emerald-900/20',
+      textClass: 'text-emerald-600 dark:text-emerald-400',
+      iconBgStyle: { backgroundColor: 'rgba(16, 185, 129, 0.1)' },
+      iconColor: '#10b981',
+      badgeClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+      Icon: Code
+    };
+  }
+  if (lower.includes('brand') || lower.includes('design') || lower.includes('logo') || lower.includes('art')) {
+    return {
+      color: 'orange',
+      borderClass: 'border-l-4 border-l-orange-500',
+      bgLight: 'bg-orange-50 dark:bg-orange-900/20',
+      textClass: 'text-orange-600 dark:text-orange-400',
+      iconBgStyle: { backgroundColor: 'rgba(249, 115, 22, 0.1)' },
+      iconColor: '#f97316',
+      badgeClass: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      Icon: Palette
+    };
+  }
+  if (lower.includes('copy') || lower.includes('content') || lower.includes('write') || lower.includes('writing')) {
+    return {
+      color: 'blue',
+      borderClass: 'border-l-4 border-l-blue-500',
+      bgLight: 'bg-blue-50 dark:bg-blue-900/20',
+      textClass: 'text-blue-600 dark:text-blue-400',
+      iconBgStyle: { backgroundColor: 'rgba(59, 130, 246, 0.1)' },
+      iconColor: '#3b82f6',
+      badgeClass: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      Icon: PenTool
+    };
+  }
+  return {
+    color: 'zinc',
+    borderClass: 'border-l-4 border-l-zinc-500',
+    bgLight: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textClass: 'text-zinc-600 dark:text-zinc-400',
+    iconBgStyle: { backgroundColor: 'rgba(161, 161, 170, 0.1)' },
+    iconColor: '#71717a',
+    badgeClass: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400',
+    Icon: Box
+  };
+};
+
+const formatKOrL = (val: number) => {
+  if (val >= 100000) return `₹${(val / 100000).toFixed(1).replace(/\.0$/, '')}L`;
+  if (val >= 1000) return `₹${(val / 1000).toFixed(0)}K`;
+  return `₹${val}`;
+};
+
+function HeaderIllustration() {
+  return (
+    <div className="relative w-[320px] h-[160px] hidden lg:block select-none overflow-visible shrink-0 ml-auto mr-12">
+      <div className="absolute right-4 top-2 w-[160px] h-[160px] bg-violet-500/10 dark:bg-violet-500/10 rounded-full blur-[40px] z-0" />
+      
+      <div className="absolute right-10 top-8 w-[220px] bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700/50 rounded-xl shadow-lg p-3 z-10 transition-transform duration-500 hover:-translate-y-1">
+        <div className="flex items-center gap-1.5 border-b border-zinc-100 dark:border-zinc-800/50 pb-2 mb-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+        </div>
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+              <Check className="w-2.5 h-2.5 text-violet-600 dark:text-violet-400" strokeWidth={3} />
+            </div>
+            <div className="h-1.5 w-16 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
+            <div className="h-1.5 w-8 bg-violet-100 dark:bg-violet-900/40 rounded-full ml-auto" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+              <Check className="w-2.5 h-2.5 text-violet-600 dark:text-violet-400" strokeWidth={3} />
+            </div>
+            <div className="h-1.5 w-24 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
+            <div className="h-1.5 w-6 bg-emerald-100 dark:bg-emerald-900/40 rounded-full ml-auto" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-zinc-200 dark:border-zinc-700" />
+            <div className="h-1.5 w-20 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
+            <div className="h-1.5 w-10 bg-orange-100 dark:bg-orange-900/40 rounded-full ml-auto" />
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute right-[210px] top-6 w-12 h-12 bg-gradient-to-br from-violet-400 to-indigo-600 rounded-xl shadow-xl shadow-indigo-500/20 transform -rotate-12 hover:rotate-12 transition-all duration-500 flex items-center justify-center z-20 hover:scale-110">
+        <PackageIcon className="w-6 h-6 text-white" strokeWidth={1.5} />
+      </div>
+
+      <div className="absolute right-2 top-14 w-[50px] bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700/50 rounded-lg shadow-md p-2 z-20 flex flex-col items-center gap-2 transition-transform duration-500 hover:-translate-y-1">
+        <div className="w-1.5 h-10 bg-zinc-100 dark:bg-zinc-800 rounded-full relative flex flex-col items-center">
+          <div className="absolute top-1 w-3.5 h-3.5 bg-violet-500 rounded-full shadow border-2 border-white dark:border-[#1a1a24]" />
+        </div>
+        <div className="h-1 w-6 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
+        <div className="h-1 w-4 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
 export default function ServicesPage() {
+  const { user } = useAuthStore();
+  const canManage = (user?.permissions || []).includes('services.manage');
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
-  // services.manage is what the backend checks on every create/edit/delete —
-  // without it the buttons would only ever 403.
-  const canManage = (user?.permissions || []).includes('services.manage');
+
   const [activeTab, setActiveTab] = useState<'services' | 'packages'>('services');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
 
-  // Modals state
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
-  const [editService, setEditService] = useState<Service | null>(null);
-  const [serviceDeleteConfirm, setServiceDeleteConfirm] = useState<number | null>(null);
-
   const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [editService, setEditService] = useState<Service | null>(null);
   const [editPackage, setEditPackage] = useState<Package | null>(null);
-  const [packageDeleteConfirm, setPackageDeleteConfirm] = useState<number | null>(null);
 
-  // Queries
-  const { data: categories = [], isError: isCategoriesError } = useQuery<ServiceCategory[]>({
-    queryKey: ['service-categories'],
+  const [serviceDeleteConfirm, setServiceDeleteConfirm] = useState<number | null>(null);
+  const [packageDeleteConfirm, setPackageDeleteConfirm] = useState<number | null>(null);
+  const [docsOpen, setDocsOpen] = useState(false);
+
+  const { data: categories = [], isLoading: loadingCategories } = useQuery<ServiceCategory[]>({
+    queryKey: ['serviceCategories'],
     queryFn: async () => {
       const res = await categoriesApi.list();
       return res.data || [];
     },
   });
 
-  const { data: rawServices = [], isError: isServicesError } = useQuery<Service[]>({
+  const { data: rawServices = [], isLoading: loadingServices, error: errorServices } = useQuery<Service[]>({
     queryKey: ['services'],
     queryFn: async () => {
       const res = await servicesApi.list();
@@ -91,17 +214,15 @@ export default function ServicesPage() {
     },
   });
 
-  // Default currency for new packages — the platform's configured default,
-  // not a hardcoded id guess.
   const { data: settings } = useQuery({
     queryKey: ['platform_settings'],
     queryFn: async () => (await platformSettings.get()).data,
   });
-  const defaultCurrencyId = (settings?.currencies || []).find(c => c.is_default)?.id
+  const defaultCurrencyId = (settings?.currencies || []).find((c: any) => c.is_default)?.id
     ?? (settings?.currencies || [])[0]?.id
     ?? null;
 
-  const { data: packagesList = [], isError: isPackagesError } = useQuery<Package[]>({
+  const { data: packagesList = [], isLoading: loadingPackages } = useQuery<Package[]>({
     queryKey: ['packages'],
     queryFn: async () => {
       const res = await packagesApi.list();
@@ -113,475 +234,532 @@ export default function ServicesPage() {
         }));
         const totalBase = services.reduce((sum: number, s: any) => sum + s.base_price, 0);
         const finalPrice = pkg.price !== undefined ? Number(pkg.price) : totalBase;
-        // Discounts persist for real now; rows saved before that carry a
-        // NULL discount_type, for which we derive a fixed-amount display.
         const hasStoredDiscount = pkg.discount_type === 'percentage' || pkg.discount_type === 'fixed';
         return {
           ...pkg,
           services,
-          discount_type: hasStoredDiscount ? pkg.discount_type : 'fixed',
-          discount_value: hasStoredDiscount ? Number(pkg.discount_value || 0) : Math.max(0, totalBase - finalPrice),
+          base_price: totalBase,
+          price: finalPrice,
+          has_discount: hasStoredDiscount
         };
       });
     },
   });
 
-  const loadError = isCategoriesError || isServicesError || isPackagesError;
-
-  // Service Mutations
   const deleteServiceMutation = useMutation({
-    mutationFn: (id: number) => servicesApi.delete(id),
+    mutationFn: servicesApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['services'] });
+      showToast('Service deleted successfully', 'success');
       setServiceDeleteConfirm(null);
     },
-    onError: (err: any) => {
-      setServiceDeleteConfirm(null);
-      showToast(getApiErrorMessage(err, 'Failed to delete service.'), 'error');
-    },
+    onError: (err) => showToast(getApiErrorMessage(err), 'error'),
   });
 
-  // Package Mutations
   const deletePackageMutation = useMutation({
-    mutationFn: (id: number) => packagesApi.delete(id),
+    mutationFn: packagesApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['packages'] });
+      showToast('Package deleted successfully', 'success');
       setPackageDeleteConfirm(null);
     },
-    onError: (err: any) => {
-      setPackageDeleteConfirm(null);
-      showToast(getApiErrorMessage(err, 'Failed to delete package.'), 'error');
-    },
+    onError: (err) => showToast(getApiErrorMessage(err), 'error'),
   });
 
-  // Filter services by category
-  const filteredServices = selectedCategoryFilter === 'all'
-    ? rawServices
-    : rawServices.filter(s => s.category_id === selectedCategoryFilter);
+  // Filter & Sort Logic
+  const searchedServices = rawServices.filter((s: Service) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return s.name.toLowerCase().includes(q) || (s.description && s.description.toLowerCase().includes(q));
+  });
 
-  // Group services by category for render
-  const servicesByCategory = categories.map(cat => ({
+  const catFilteredServices = selectedCategoryFilter === 'all'
+    ? searchedServices
+    : searchedServices.filter((s: Service) => s.category_id === selectedCategoryFilter);
+
+  const processedServices = [...catFilteredServices].sort((a: Service, b: Service) => {
+    switch (sortBy) {
+      case 'newest': return b.id - a.id;
+      case 'oldest': return a.id - b.id;
+      case 'name': return a.name.localeCompare(b.name);
+      case 'price_asc': return Number(a.base_price || 0) - Number(b.base_price || 0);
+      case 'price_desc': return Number(b.base_price || 0) - Number(a.base_price || 0);
+      default: return b.id - a.id;
+    }
+  });
+
+  const servicesByCategory = categories.map((cat: ServiceCategory) => ({
     ...cat,
-    services: rawServices.filter(s => s.category_id === cat.id),
-  })).filter(cat => selectedCategoryFilter === 'all' || cat.id === selectedCategoryFilter);
+    services: processedServices.filter((s: Service) => s.category_id === cat.id),
+  })).filter((cat: any) => selectedCategoryFilter === 'all' || cat.id === selectedCategoryFilter)
+     .filter((cat: any) => cat.services.length > 0);
+
+  const processedPackages = packagesList.filter((pkg: Package) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return pkg.name.toLowerCase().includes(q) || (pkg.description && pkg.description.toLowerCase().includes(q));
+  }).sort((a: Package, b: Package) => {
+    switch (sortBy) {
+      case 'newest': return b.id - a.id;
+      case 'oldest': return a.id - b.id;
+      case 'name': return a.name.localeCompare(b.name);
+      case 'price_asc': return Number(a.price || 0) - Number(b.price || 0);
+      case 'price_desc': return Number(b.price || 0) - Number(a.price || 0);
+      default: return b.id - a.id;
+    }
+  });
+
+  if (loadingServices || loadingCategories || loadingPackages) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
+      </div>
+    );
+  }
+
+  if (errorServices) {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
+        <AlertCircle size={20} className="mt-0.5" />
+        <div>
+          <h3 className="font-semibold">Failed to load services</h3>
+          <p className="text-sm opacity-90">{getApiErrorMessage(errorServices)}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-[1400px] mx-auto p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">
-            <PackageIcon className="text-violet-500 w-6 h-6" />
+    <div className="pb-12 max-w-[1600px] mx-auto">
+      {/* Header Banner */}
+      <div className="relative overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#12121a] shadow-sm mb-6 flex items-center">
+        <div className="p-6 md:p-8 flex-1 z-10 relative">
+          <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-violet-500/5 to-transparent pointer-events-none" />
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 mb-2">
             Service Catalog & Packages
             <HelpIcon title="Service Catalog & Packages" content={{
-              what: 'Your master price list — every service you sell and every bundled package, with base prices, billing units, and GST rates.',
-              why: 'Quotes and invoices pull their line items from this catalog, so what you set here is what clients get charged.',
+              what: 'Your master price list — every service you sell and every bundled package.',
+              why: 'Quotes and invoices pull their line items from this catalog.',
               when: 'Set it up once, then update whenever you add an offering or change a rate.',
             }} />
           </h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-xl mb-6">
             Manage your service lines, pricing models, and client bundled packages.
           </p>
-        </div>
-        <div className="flex gap-2">
-          <HowToUseGuide moduleKey="services" title="How the Service Catalog Works" content={SERVICES_HOWTO} />
-          {canManage && (activeTab === 'services' ? (
-            <button
-              id="new-service-btn"
-              onClick={() => { setEditService(null); setServiceModalOpen(true); }}
-              className="btn btn-primary flex items-center gap-1.5"
-            >
-              <Plus size={16} /> New Service
-            </button>
-          ) : (
-            <button
-              id="new-package-btn"
-              onClick={() => { setEditPackage(null); setPackageModalOpen(true); }}
-              className="btn btn-primary flex items-center gap-1.5"
-            >
-              <Plus size={16} /> New Package
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {loadError && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.5rem',
-          background: 'var(--danger-subtle)', border: '1px solid var(--danger)', color: 'var(--danger)',
-          borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', fontSize: '0.8125rem',
-        }}>
-          <AlertCircle size={16} />
-          Couldn't load part of the catalog. What you see below may be incomplete — refresh to retry.
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex border-b" style={{ gap: '1.5rem', marginBottom: '1.5rem' }}>
-        <button
-          onClick={() => setActiveTab('services')}
-          style={{
-            padding: '0.75rem 0.5rem',
-            borderBottom: activeTab === 'services' ? '2px solid var(--accent)' : '2px solid transparent',
-            color: activeTab === 'services' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'services' ? 600 : 500,
-            fontSize: '0.875rem',
-            transition: 'all var(--transition-fast)'
-          }}
-        >
-          Services by Category
-        </button>
-        <button
-          onClick={() => setActiveTab('packages')}
-          style={{
-            padding: '0.75rem 0.5rem',
-            borderBottom: activeTab === 'packages' ? '2px solid var(--accent)' : '2px solid transparent',
-            color: activeTab === 'packages' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'packages' ? 600 : 500,
-            fontSize: '0.875rem',
-            transition: 'all var(--transition-fast)'
-          }}
-        >
-          Bundled Packages
-        </button>
-      </div>
-
-      {/* Tab: Services */}
-      {activeTab === 'services' && (
-        <div className="space-y-6 flex flex-col gap-4">
-          {/* Category Quick Filter */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs font-semibold text-muted uppercase tracking-wider mr-2">Filter Category:</span>
-            <button
-              onClick={() => setSelectedCategoryFilter('all')}
-              className="px-3 py-1 rounded-full text-xs font-medium"
-              style={{
-                backgroundColor: selectedCategoryFilter === 'all' ? 'var(--accent)' : 'var(--surface-elevated)',
-                color: selectedCategoryFilter === 'all' ? '#ffffff' : 'var(--text-secondary)',
-                border: '1px solid var(--border)',
-                transition: 'all var(--transition-fast)'
-              }}
-            >
-              All Categories
-            </button>
-            {categories.map((cat) => (
+          <div className="flex gap-3 relative z-20">
+            <HowToUseGuide moduleKey="services" title="How the Service Catalog Works" content={SERVICES_HOWTO} />
+            {canManage && (activeTab === 'services' ? (
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategoryFilter(cat.id)}
-                className="px-3 py-1 rounded-full text-xs font-medium"
-                style={{
-                  backgroundColor: selectedCategoryFilter === cat.id ? 'var(--accent)' : 'var(--surface-elevated)',
-                  color: selectedCategoryFilter === cat.id ? '#ffffff' : 'var(--text-secondary)',
-                  border: '1px solid var(--border)',
-                  transition: 'all var(--transition-fast)'
-                }}
+                onClick={() => { setEditService(null); setServiceModalOpen(true); }}
+                className="btn btn-primary flex items-center gap-1.5 shadow-sm"
               >
-                {cat.name}
+                <Plus size={16} /> New Service
+              </button>
+            ) : (
+              <button
+                onClick={() => { setEditPackage(null); setPackageModalOpen(true); }}
+                className="btn btn-primary flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus size={16} /> New Package
               </button>
             ))}
           </div>
+        </div>
+        <HeaderIllustration />
+      </div>
 
-          {/* Grids per category */}
-          <div className="space-y-8 flex flex-col gap-6">
-            {servicesByCategory.map((cat) => (
-              <div key={cat.id} className="space-y-3 flex flex-col gap-2">
-                <div className="border-b pb-2">
-                  <h2 className="text-lg font-bold text-primary tracking-tight">{cat.name}</h2>
-                  {cat.description && <p className="text-xs text-muted">{cat.description}</p>}
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* Left Content Column */}
+        <div className="space-y-6 min-w-0">
+          {/* Tabs row */}
+          <div className="flex border-b border-zinc-200 dark:border-zinc-800" style={{ gap: '1.5rem', marginBottom: '1.5rem' }}>
+            <button
+              onClick={() => { setActiveTab('services'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
+              className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'services' ? 'text-violet-600 dark:text-violet-400' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
+            >
+              Services by Category
+              {activeTab === 'services' && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-violet-600 dark:bg-violet-400 rounded-t-full" />
+              )}
+            </button>
+            <button
+              onClick={() => { setActiveTab('packages'); setSearchQuery(''); }}
+              className={`pb-3 text-sm font-semibold transition-colors relative ${activeTab === 'packages' ? 'text-violet-600 dark:text-violet-400' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
+            >
+              Bundled Packages
+              {activeTab === 'packages' && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-violet-600 dark:bg-violet-400 rounded-t-full" />
+              )}
+            </button>
+          </div>
 
-                {cat.services.length === 0 ? (
-                  <div
-                    className="p-6 rounded-lg text-center text-muted text-sm"
-                    style={{
-                      background: 'var(--surface-elevated)',
-                      border: '1px dashed var(--border)'
-                    }}
-                  >
-                    No services configured in this category.
+          {activeTab === 'services' && (
+            <div className="flex flex-wrap gap-2 items-center mb-4">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-2">Filter Category:</span>
+              <button
+                onClick={() => setSelectedCategoryFilter('all')}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  selectedCategoryFilter === 'all' 
+                    ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20' 
+                    : 'bg-transparent border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                All Categories
+              </button>
+              {categories.map((cat: ServiceCategory) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategoryFilter(cat.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    selectedCategoryFilter === cat.id 
+                      ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20' 
+                      : 'bg-transparent border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Search & Sort Row */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input 
+                type="text"
+                placeholder={activeTab === 'services' ? "Search services..." : "Search packages..."}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Sort by</span>
+              <div className="relative">
+                <select 
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="appearance-none bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 py-2 pl-3 pr-8 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm font-semibold cursor-pointer"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="name">Name A-Z</option>
+                  <option value="price_asc">Price Low-High</option>
+                  <option value="price_desc">Price High-Low</option>
+                </select>
+                <SlidersHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          {activeTab === 'services' && (
+            <div className="space-y-8">
+              {servicesByCategory.length === 0 ? (
+                <div className="p-12 rounded-xl text-center border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/50 dark:bg-zinc-900/50">
+                  <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mx-auto mb-3">
+                    <Search className="w-5 h-5 text-zinc-400" />
                   </div>
-                ) : (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                      gap: '1rem'
-                    }}
-                  >
-                    {cat.services.map((service) => (
-                      <div
-                        key={service.id}
-                        className="group relative p-5 rounded-lg shadow flex flex-col justify-between"
-                        style={{
-                          background: 'var(--surface)',
-                          border: '1px solid var(--border)',
-                          transition: 'all var(--transition-fast)',
-                          minHeight: '180px'
-                        }}
-                      >
-                        <div className="space-y-2 flex flex-col gap-1.5">
-                          <div className="flex justify-between items-start gap-2">
-                            <h3 className="font-semibold text-primary">
-                              {service.name}
-                            </h3>
-                            <span
-                              className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded"
-                              style={{
-                                background: 'var(--surface-elevated)',
-                                color: 'var(--text-secondary)',
-                                border: '1px solid var(--border)'
-                              }}
-                            >
-                              {service.unit}
-                            </span>
+                  <p className="text-zinc-900 dark:text-zinc-100 font-semibold">No services found</p>
+                  <p className="text-sm text-zinc-500 mt-1">Adjust your filters or search query to find what you're looking for.</p>
+                </div>
+              ) : (
+                servicesByCategory.map((cat: any) => {
+                  const style = getCategoryStyle(cat.name);
+                  const CatIcon = style.Icon;
+                  
+                  return (
+                    <div key={cat.id} className="space-y-4">
+                      <div className="flex items-center gap-2.5 pb-2">
+                        <CatIcon className={`w-5 h-5 ${style.textClass}`} />
+                        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">{cat.name}</h2>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {cat.services.map((service: Service) => (
+                          <div
+                            key={service.id}
+                            className={`group relative bg-white dark:bg-[#1a1a24] rounded-xl shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden border border-zinc-200 dark:border-zinc-700/50 min-h-[190px] ${style.borderClass}`}
+                          >
+                            <div className="p-5 flex-1 flex flex-col gap-2">
+                              <div className="flex justify-between items-start gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div 
+                                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                                    style={style.iconBgStyle}
+                                  >
+                                    <CatIcon style={{ color: style.iconColor }} size={20} strokeWidth={2} />
+                                  </div>
+                                  <div>
+                                    <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px] leading-tight mb-1.5">
+                                      {service.name}
+                                    </h3>
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${style.badgeClass}`}>
+                                      {service.unit}
+                                    </span>
+                                  </div>
+                                </div>
+                                {canManage && (
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => { setEditService(service); setServiceModalOpen(true); }}
+                                      className="p-1.5 rounded-md text-zinc-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                                      title="Edit Service"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => setServiceDeleteConfirm(service.id)}
+                                      className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                      title="Delete Service"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {service.description && (
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2 mt-2">
+                                  {service.description}
+                                </p>
+                              )}
+                            </div>
+                            
+                            <div className="px-5 py-3 bg-zinc-50 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-0.5">Base Price</span>
+                                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                  {formatCurrency(service.base_price || 0)}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-0.5">Tax Rate</span>
+                                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{service.tax_rate}% GST</span>
+                              </div>
+                            </div>
                           </div>
-                          {service.description && (
-                            <p className="text-xs text-secondary leading-relaxed line-clamp-3">
-                              {service.description}
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {activeTab === 'packages' && (
+            <div className="space-y-4">
+              {processedPackages.length === 0 ? (
+                <div className="p-12 rounded-xl text-center border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/50 dark:bg-zinc-900/50">
+                  <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mx-auto mb-3">
+                    <PackageIcon className="w-5 h-5 text-zinc-400" />
+                  </div>
+                  <p className="text-zinc-900 dark:text-zinc-100 font-semibold">No packages found</p>
+                  <p className="text-sm text-zinc-500 mt-1">Create a package to bundle services together.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {processedPackages.map((pkg: Package) => {
+                    const servicesInPackage = pkg.services || [];
+                    const hasDiscount = (pkg.discount_value || 0) > 0;
+                    
+                    return (
+                      <div
+                        key={pkg.id}
+                        className="group relative bg-white dark:bg-[#1a1a24] rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-zinc-200 dark:border-zinc-700/50 flex flex-col justify-between overflow-hidden border-l-4 border-l-violet-500"
+                      >
+                        <div className="p-5 flex-1">
+                          <div className="flex justify-between items-start gap-3 mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center flex-shrink-0">
+                                <PackageIcon className="text-violet-600 dark:text-violet-400" size={20} strokeWidth={2} />
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px] leading-tight mb-1">
+                                  {pkg.name}
+                                </h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                                    {servicesInPackage.length} Services
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            {canManage && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => { setEditPackage(pkg); setPackageModalOpen(true); }}
+                                  className="p-1.5 rounded-md text-zinc-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                                  title="Edit Package"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setPackageDeleteConfirm(pkg.id)}
+                                  className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  title="Delete Package"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {pkg.description && (
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2 mb-4">
+                              {pkg.description}
                             </p>
                           )}
-                        </div>
 
-                        <div className="mt-4 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid var(--border)' }}>
-                          <div>
-                            <span className="text-[10px] text-muted block">Base Price</span>
-                            <span className="text-base font-bold text-primary">
-                              {formatCurrency(service.base_price)}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] text-muted block">Tax Rate</span>
-                            <span className="text-xs font-semibold text-secondary">{service.tax_rate}% GST</span>
-                          </div>
-                        </div>
-
-                        {/* Card Hover Actions */}
-                        <div className="card-actions">
-                          {canManage && (<>
-                          <button
-                            id={`edit-service-${service.id}`}
-                            onClick={() => { setEditService(service); setServiceModalOpen(true); }}
-                            className="p-1 rounded text-secondary hover:text-accent"
-                            style={{
-                              background: 'var(--surface-elevated)',
-                              border: '1px solid var(--border)',
-                              padding: '6px'
-                            }}
-                            title="Edit Service"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            id={`delete-service-${service.id}`}
-                            onClick={() => setServiceDeleteConfirm(service.id)}
-                            className="p-1 rounded text-secondary hover:text-danger"
-                            style={{
-                              background: 'var(--surface-elevated)',
-                              border: '1px solid var(--border)',
-                              padding: '6px'
-                            }}
-                            title="Delete Service"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                          </>)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab: Bundled Packages */}
-      {activeTab === 'packages' && (
-        <div className="space-y-6 flex flex-col gap-4">
-          {packagesList.length === 0 ? (
-            <div
-              className="p-12 rounded-lg text-center flex flex-col items-center justify-center gap-2"
-              style={{
-                background: 'var(--surface-elevated)',
-                border: '1px solid var(--border)'
-              }}
-            >
-              <Layers size={40} className="text-muted" />
-              <p className="text-primary font-medium">No bundled packages configured</p>
-              <p className="text-xs text-muted">Create bundle offers by combining multiple service products with automated pricing discounts.</p>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
-                gap: '1.5rem'
-              }}
-            >
-              {packagesList.map((pkg) => {
-                const totalBase = (pkg.services || []).reduce((sum, s) => sum + s.base_price, 0);
-                const discountText = pkg.discount_type === 'percentage'
-                  ? `${pkg.discount_value}% Off`
-                  : `${formatCurrency(pkg.discount_value)} Off`;
-                // The stored final price is the source of truth — the
-                // discount fields describe how it was arrived at.
-                const finalVal = (pkg as any).price !== undefined
-                  ? Number((pkg as any).price)
-                  : (pkg.discount_type === 'percentage'
-                      ? totalBase * (1 - pkg.discount_value / 100)
-                      : Math.max(0, totalBase - pkg.discount_value));
-
-                return (
-                  <div
-                    key={pkg.id}
-                    className="group relative p-6 rounded-lg shadow flex flex-col justify-between"
-                    style={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      transition: 'all var(--transition-fast)',
-                      gap: '1.25rem'
-                    }}
-                  >
-                    <div className="space-y-3 flex flex-col gap-2">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-bold text-primary">
-                            {pkg.name}
-                          </h3>
-                          <span
-                            className="inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 mt-1.5 rounded-full"
-                            style={{
-                              background: 'var(--accent-subtle)',
-                              color: 'var(--accent)',
-                              border: '1px solid var(--border)'
-                            }}
-                          >
-                            <Tag size={10} /> {discountText}
-                          </span>
-                        </div>
-                        <div className="pkg-actions">
-                          {canManage && (<>
-                          <button
-                            id={`edit-pkg-${pkg.id}`}
-                            onClick={() => { setEditPackage(pkg); setPackageModalOpen(true); }}
-                            className="p-1 rounded text-secondary hover:text-accent"
-                            style={{
-                              background: 'var(--surface-elevated)',
-                              border: '1px solid var(--border)',
-                              padding: '6px'
-                            }}
-                            title="Edit Package"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            id={`delete-pkg-${pkg.id}`}
-                            onClick={() => setPackageDeleteConfirm(pkg.id)}
-                            className="p-1 rounded text-secondary hover:text-danger"
-                            style={{
-                              background: 'var(--surface-elevated)',
-                              border: '1px solid var(--border)',
-                              padding: '6px'
-                            }}
-                            title="Delete Package"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                          </>)}
-                        </div>
-                      </div>
-
-                      {pkg.description && (
-                        <p className="text-sm text-secondary leading-relaxed">
-                          {pkg.description}
-                        </p>
-                      )}
-
-                      {/* Included Services list */}
-                      <div className="space-y-2 pt-2 flex flex-col gap-1.5">
-                        <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
-                          Included Services ({pkg.services?.length || 0}):
-                        </span>
-                        <div
-                          className="rounded-lg overflow-hidden"
-                          style={{
-                            background: 'var(--background)',
-                            border: '1px solid var(--border)'
-                          }}
-                        >
-                          {pkg.services?.map((s, sIdx) => (
-                            <div
-                              key={s.id}
-                              className="flex justify-between items-center p-2.5 text-xs"
-                              style={{
-                                borderTop: sIdx > 0 ? '1px solid var(--border-subtle)' : 'none'
-                              }}
-                            >
-                              <span className="text-primary font-medium">{s.name}</span>
-                              <span className="text-secondary">{formatCurrency(s.base_price)} / {s.unit}</span>
+                          {servicesInPackage.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Includes:</div>
+                              <ul className="space-y-1.5">
+                                {servicesInPackage.slice(0, 3).map((ps: any) => {
+                                  const sName = ps.service?.name || 'Unknown Service';
+                                  return (
+                                    <li key={ps.id || Math.random()} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+                                      <div className="w-1 h-1 rounded-full bg-violet-400 flex-shrink-0" />
+                                      <span className="truncate">{sName}</span>
+                                    </li>
+                                  );
+                                })}
+                                {servicesInPackage.length > 3 && (
+                                  <li className="text-xs text-zinc-400 font-medium pl-3">
+                                    + {servicesInPackage.length - 3} more services
+                                  </li>
+                                )}
+                              </ul>
                             </div>
-                          ))}
+                          )}
+                        </div>
+                        
+                        <div className="px-5 py-3 bg-violet-50/50 dark:bg-violet-900/10 border-t border-violet-100 dark:border-violet-900/20 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wider block mb-0.5">Package Total</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-violet-700 dark:text-violet-300">
+                                {formatCurrency(pkg.price || 0)}
+                              </span>
+                            </div>
+                          </div>
+                          {hasDiscount && (
+                            <div className="flex items-center gap-1 bg-white dark:bg-[#1a1a24] px-2 py-1 rounded shadow-sm border border-violet-100 dark:border-violet-800">
+                              <Percent className="w-3 h-3 text-emerald-500" />
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                {pkg.discount_type === 'percentage' ? `${pkg.discount_value}% OFF` : 'DISCOUNTED'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Cost Summary Box */}
-                    <div
-                      className="p-4 rounded-lg flex items-center justify-between"
-                      style={{
-                        background: 'var(--surface-elevated)',
-                        border: '1px solid var(--border)'
-                      }}
-                    >
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted block">Total Base Price</span>
-                        <span className="text-sm text-secondary line-through">
-                          {formatCurrency(totalBase)}
-                        </span>
-                      </div>
-                      <div className="text-right space-y-0.5">
-                        <span className="text-xs text-accent font-medium block">Bundled Special</span>
-                        <span className="text-lg font-extrabold text-primary">
-                          {formatCurrency(finalVal)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
 
-      {/* ── SERVICE ADD/EDIT MODAL ── */}
-      {serviceModalOpen && (
-        <ServiceFormModal
-          service={editService}
-          categories={categories}
-          onClose={() => setServiceModalOpen(false)}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['services'] });
-            setServiceModalOpen(false);
-          }}
+        {/* Right Sidebar Column */}
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
+              <PackageIcon className="w-6 h-6 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Total Services</div>
+              <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 leading-none">{rawServices.length}</div>
+              <div className="text-xs text-zinc-400 mt-1">Active across all categories</div>
+            </div>
+          </div>
+          
+          <div className="bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+              <Tag className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Categories</div>
+              <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 leading-none">{categories.length}</div>
+              <div className="text-xs text-zinc-400 mt-1">Service categories</div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
+              <CircleDollarSign className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Price Range</div>
+              <div className="text-xl font-black text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">
+                {rawServices.length > 0 
+                  ? `${formatKOrL(Math.min(...rawServices.map((s: Service) => s.base_price || 0)))} - ${formatKOrL(Math.max(...rawServices.map((s: Service) => s.base_price || 0)))}`
+                  : '₹0'}
+              </div>
+              <div className="text-xs text-zinc-400 mt-1">Across all services</div>
+            </div>
+          </div>
+
+          <div className="bg-violet-50/50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-900/30 rounded-xl p-5 shadow-sm mt-6">
+            <h3 className="font-bold text-violet-900 dark:text-violet-100 flex items-center gap-2 mb-4">
+              <Lightbulb className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+              Quick Tips
+            </h3>
+            <ul className="space-y-3 mb-5">
+              <li className="flex items-start gap-2.5">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={3} />
+                <span className="text-sm text-zinc-600 dark:text-zinc-300 leading-tight">Create services to standardize your offerings.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={3} />
+                <span className="text-sm text-zinc-600 dark:text-zinc-300 leading-tight">Use <strong className="text-zinc-900 dark:text-zinc-100 font-semibold">packages</strong> to bundle multiple services.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Check className="w-4 h-4 text-violet-500 flex-shrink-0 mt-0.5" strokeWidth={3} />
+                <span className="text-sm text-zinc-600 dark:text-zinc-300 leading-tight">Set clear pricing and tax rates for accurate quotes.</span>
+              </li>
+            </ul>
+          </div>
+
+          <button
+            onClick={() => setDocsOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm"
+          >
+            View Documentation <ExternalLink size={14} />
+          </button>
+        </div>
+      </div>
+
+      {docsOpen && (
+        <GuideBody
+          title="How the Service Catalog Works"
+          content={SERVICES_HOWTO}
+          onClose={() => setDocsOpen(false)}
         />
       )}
 
-      {/* ── SERVICE DELETE CONFIRMATION ── */}
-      {serviceDeleteConfirm !== null && (
-        <div className="overlay z-50">
-          <div className="modal max-w-sm bg-zinc-950 border border-zinc-800 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-zinc-100 mb-2">Delete Service Line?</h3>
-            <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-              Are you sure you want to delete this service? It will be removed from the catalog. Existing quotes containing this service will not be affected.
+      {serviceDeleteConfirm && (
+        <div className="overlay z-50 flex items-center justify-center" onClick={() => setServiceDeleteConfirm(null)}>
+          <div className="modal max-w-sm w-full shadow-xl bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 text-center" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Delete Service?</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
+              Are you sure you want to delete this service? This action cannot be undone and may affect existing quotes.
             </p>
-            <div className="flex justify-end gap-3">
-              <button className="btn btn-secondary text-xs" onClick={() => setServiceDeleteConfirm(null)}>Cancel</button>
-              <button
-                className="btn btn-danger text-xs font-semibold px-4 py-2"
-                onClick={() => deleteServiceMutation.mutate(serviceDeleteConfirm)}
+            <div className="flex gap-3 justify-center">
+              <button 
+                onClick={() => setServiceDeleteConfirm(null)} 
+                className="px-4 py-2 rounded-lg text-sm font-semibold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => deleteServiceMutation.mutate(serviceDeleteConfirm)} 
                 disabled={deleteServiceMutation.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
                 {deleteServiceMutation.isPending ? 'Deleting...' : 'Delete'}
               </button>
@@ -590,34 +768,27 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* ── PACKAGE ADD/EDIT MODAL ── */}
-      {packageModalOpen && (
-        <PackageFormModal
-          pkg={editPackage}
-          servicesList={rawServices}
-          defaultCurrencyId={defaultCurrencyId}
-          onClose={() => setPackageModalOpen(false)}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['packages'] });
-            setPackageModalOpen(false);
-          }}
-        />
-      )}
-
-      {/* ── PACKAGE DELETE CONFIRMATION ── */}
-      {packageDeleteConfirm !== null && (
-        <div className="overlay z-50">
-          <div className="modal max-w-sm bg-zinc-950 border border-zinc-800 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-zinc-100 mb-2">Delete Bundled Package?</h3>
-            <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-              Are you sure you want to delete this package? It will be permanently removed.
+      {packageDeleteConfirm && (
+        <div className="overlay z-50 flex items-center justify-center" onClick={() => setPackageDeleteConfirm(null)}>
+          <div className="modal max-w-sm w-full shadow-xl bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 text-center" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Delete Package?</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
+              Are you sure you want to delete this package? This action cannot be undone.
             </p>
-            <div className="flex justify-end gap-3">
-              <button className="btn btn-secondary text-xs" onClick={() => setPackageDeleteConfirm(null)}>Cancel</button>
-              <button
-                className="btn btn-danger text-xs font-semibold px-4 py-2"
-                onClick={() => deletePackageMutation.mutate(packageDeleteConfirm)}
+            <div className="flex gap-3 justify-center">
+              <button 
+                onClick={() => setPackageDeleteConfirm(null)} 
+                className="px-4 py-2 rounded-lg text-sm font-semibold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => deletePackageMutation.mutate(packageDeleteConfirm)} 
                 disabled={deletePackageMutation.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
                 {deletePackageMutation.isPending ? 'Deleting...' : 'Delete'}
               </button>
@@ -625,11 +796,29 @@ export default function ServicesPage() {
           </div>
         </div>
       )}
+
+      {serviceModalOpen && (
+        <ServiceFormModal
+          service={editService}
+          categories={categories}
+          onClose={() => { setServiceModalOpen(false); setEditService(null); }}
+          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['services'] })}
+        />
+      )}
+
+      {packageModalOpen && (
+        <PackageFormModal
+          pkg={editPackage}
+          servicesList={rawServices}
+          defaultCurrencyId={defaultCurrencyId}
+          onClose={() => { setPackageModalOpen(false); setEditPackage(null); }}
+          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['packages'] })}
+        />
+      )}
     </div>
   );
 }
 
-// ── SERVICE FORM MODAL COMPONENT ────────────────────────────────
 interface ServiceForm {
   category_id: number;
   name: string;
@@ -741,7 +930,7 @@ function ServiceFormModal({
             <label className="form-label text-xs font-semibold text-secondary mb-1.5 block">Service Category *</label>
             <select
               value={form.category_id}
-              onChange={(e) => setForm(p => ({ ...p, category_id: Number(e.target.value) }))}
+              onChange={(e) => setForm((p: any) => ({ ...p, category_id: Number(e.target.value) }))}
               className="form-input"
             >
               {categories.map((c) => (
@@ -757,7 +946,7 @@ function ServiceFormModal({
               type="text"
               placeholder="e.g. On-Page SEO Campaign"
               value={form.name}
-              onChange={(e) => { setForm(p => ({ ...p, name: e.target.value })); setErrors(p => ({ ...p, name: undefined })); }}
+              onChange={(e) => { setForm((p: any) => ({ ...p, name: e.target.value })); setErrors((p: any) => ({ ...p, name: undefined })); }}
               className={`form-input ${errors.name ? 'error' : ''}`}
             />
             {errors.name && <span className="text-danger text-xs mt-1 block">{errors.name}</span>}
@@ -770,7 +959,7 @@ function ServiceFormModal({
               placeholder="Detailed explanation of the deliverables, scope of work, etc."
               rows={3}
               value={form.description}
-              onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+              onChange={(e) => setForm((p: any) => ({ ...p, description: e.target.value }))}
               className="form-input"
               style={{ resize: 'none' }}
             />
@@ -793,7 +982,7 @@ function ServiceFormModal({
                 type="number"
                 placeholder="25000"
                 value={form.base_price || ''}
-                onChange={(e) => { setForm(p => ({ ...p, base_price: Number(e.target.value) })); setErrors(p => ({ ...p, base_price: undefined })); }}
+                onChange={(e) => { setForm((p: any) => ({ ...p, base_price: Number(e.target.value) })); setErrors((p: any) => ({ ...p, base_price: undefined })); }}
                 className={`form-input ${errors.base_price ? 'error' : ''}`}
               />
               {errors.base_price && <span className="text-danger text-xs mt-1 block">{errors.base_price}</span>}
@@ -806,7 +995,7 @@ function ServiceFormModal({
               </label>
               <select
                 value={form.unit}
-                onChange={(e) => setForm(p => ({ ...p, unit: e.target.value }))}
+                onChange={(e) => setForm((p: any) => ({ ...p, unit: e.target.value }))}
                 className="form-input"
               >
                 <option value="hour">Per Hour</option>
@@ -825,7 +1014,7 @@ function ServiceFormModal({
               </label>
               <select
                 value={form.tax_rate}
-                onChange={(e) => setForm(p => ({ ...p, tax_rate: Number(e.target.value) }))}
+                onChange={(e) => setForm((p: any) => ({ ...p, tax_rate: Number(e.target.value) }))}
                 className="form-input"
               >
                 <option value={0}>0% (Exempt)</option>
@@ -993,7 +1182,7 @@ function PackageFormModal({
               type="text"
               placeholder="e.g. Small Business Marketing Bundle"
               value={form.name}
-              onChange={(e) => { setForm(p => ({ ...p, name: e.target.value })); setErrors(p => ({ ...p, name: undefined })); }}
+              onChange={(e) => { setForm((p: any) => ({ ...p, name: e.target.value })); setErrors((p: any) => ({ ...p, name: undefined })); }}
               className={`form-input ${errors.name ? 'error' : ''}`}
             />
             {errors.name && <span className="text-danger text-xs mt-1 block">{errors.name}</span>}
@@ -1006,7 +1195,7 @@ function PackageFormModal({
               placeholder="Explain the scope and pricing benefits of this bundled package."
               rows={3}
               value={form.description}
-              onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+              onChange={(e) => setForm((p: any) => ({ ...p, description: e.target.value }))}
               className="form-input"
               style={{ resize: 'none' }}
             />
@@ -1027,7 +1216,7 @@ function PackageFormModal({
               </label>
               <select
                 value={form.discount_type}
-                onChange={(e) => setForm(p => ({ ...p, discount_type: e.target.value as 'percentage' | 'fixed' }))}
+                onChange={(e) => setForm((p: any) => ({ ...p, discount_type: e.target.value as 'percentage' | 'fixed' }))}
                 className="form-input"
               >
                 <option value="percentage">Percentage Discount (%)</option>
@@ -1044,7 +1233,7 @@ function PackageFormModal({
                 type="number"
                 placeholder="10"
                 value={form.discount_value || ''}
-                onChange={(e) => { setForm(p => ({ ...p, discount_value: Number(e.target.value) })); setErrors(p => ({ ...p, discount_value: undefined })); }}
+                onChange={(e) => { setForm((p: any) => ({ ...p, discount_value: Number(e.target.value) })); setErrors((p: any) => ({ ...p, discount_value: undefined })); }}
                 className="form-input"
               />
             </div>

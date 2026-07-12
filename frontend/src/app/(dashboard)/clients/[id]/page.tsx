@@ -359,11 +359,11 @@ export default function ClientDetailPage() {
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '0.75rem 1rem', whiteSpace: 'nowrap',
-              borderBottom: tab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+              borderWidth: '0 0 2px 0',
+              borderStyle: 'solid',
+              borderColor: tab === t.key ? 'var(--accent)' : 'transparent',
               color: tab === t.key ? 'var(--text-primary)' : 'var(--text-secondary)',
-              fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer', background: 'none', border: 'none',
-              borderBottomWidth: 2, borderBottomStyle: 'solid',
-              borderBottomColor: tab === t.key ? 'var(--accent)' : 'transparent',
+              fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer', background: 'none',
             }}
           >
             <t.icon size={14} />

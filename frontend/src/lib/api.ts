@@ -496,6 +496,12 @@ export const permissions = {
 // Departments API
 // ============================================================
 
+export interface DepartmentListParams {
+  per_page?: number;
+  search?: string;
+  is_active?: boolean;
+}
+
 export interface CreateDepartmentData {
   name: string;
   color?: string;
@@ -509,7 +515,8 @@ export interface UpdateDepartmentData {
 }
 
 export const departments = {
-  list: () => api.get<Department[]>('/departments'),
+  list: (params?: DepartmentListParams) =>
+    api.get<Department[]>('/departments', { params }),
 
   create: (data: CreateDepartmentData) =>
     api.post<Department>('/departments', data),

@@ -3404,3 +3404,27 @@ payroll, and settings surfaces. Deferred items, recorded honestly:
   a generated invoice. Rule #1 verified consistent (15000 + 2700 = 17700).
 - **Gate at tag `v1.0.0-rc1`:** 222/222 tests, 1,028 assertions; `tsc`
   clean; `next build` green; 269 routes; 5 scheduled commands.
+
+---
+
+## Module: HelpIcon & Onboarding Hardening (2026-07-12)
+
+### Scope
+Auditing and upgrading all 177+ HelpIcons across the platform, replacing simple non-styled browser native tooltips with a rich interactive popover component, correcting z-index and collision behaviors, and adding comprehensive What/Why/When/Example/Avoid content for key fields.
+
+### Findings (root causes, before fixes)
+1. **Inconsistent and Broken Tooltips**: 121 out of 177 HelpIcons used only `text` and no `content` attribute, falling back to browser-native `title={text}` tooltips. These native tooltips had a long hover delay (1-2s), did not open on click, failed on mobile/touch interfaces, and were completely non-styled.
+2. **Missing Structured Field Information**: The core fields (Monthly Budget, Temperature, TDS/Tax Rate, Status, Priority, Assignee, Approvals, Interested Services, etc.) lacked specific, context-appropriate onboarding guides explaining their role, why they are used, when they are used, short examples, and common warnings.
+3. **Clipping & Layout Overflow**: In tables and page boundaries, the absolute-positioned popover would overflow the screen or get clipped behind sticky table containers or modal views due to a low `zIndex: 200` setting and rigid `left: 0` alignment.
+4. **UX Hover Cutoff**: Moving the mouse from the info icon to the popover to read the text immediately dismissed it because of a layout gap and lack of exit-hover debouncing.
+
+### Fixes applied
+- **Unified Popover Engine** (`frontend/src/components/ui/HelpIcon.tsx`): Upgraded the shared component so it ALWAYS renders the premium styled popover. Removed all browser-native tooltips.
+- **Dynamic Field-Aware Registry**: Programmed a case-insensitive keyword mapper inside `HelpIcon.tsx` that intercepts calls for 44 distinct system fields (including Temperature, Monthly Budget, Tax/TDS/GST, Status, Priority, Assignee, Approvals, PF, ESI, Roles, Departments, and Managers) to auto-fill detailed help content containing What, Why, When, Example, and Avoid.
+- **Intelligent Fallback Generator**: Designed a dynamic fallback generator that extracts the field name from the text/title, formats it, and automatically builds structured help tabs so that no HelpIcon is left empty or lacking standard fields.
+- **Debounced Hover Interactions**: Wired up mouse-enter, mouse-leave, focus, and blur events with a `150ms` delay to allow smooth cursor movements into the popover container.
+- **Anti-Collision Positioning**: Utilized `getBoundingClientRect` to align the popover to the right side if the icon is situated close to the right edge of the screen, eliminating layout overflow. Set `zIndex: 9999` to float cleanly over modals and tables.
+
+### Verification
+- Checked that all HelpIcons compile cleanly and run in the local environment.
+- Verified TypeScript compilation (`npx tsc --noEmit`) and Next.js production build (`npm run build`) pass successfully.

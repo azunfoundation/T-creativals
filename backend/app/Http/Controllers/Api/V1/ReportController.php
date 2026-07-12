@@ -634,7 +634,7 @@ class ReportController extends Controller
         // permission-gated.
         $cacheKey = 'dashboard_overview_v2_' . $user->id;
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($user) {
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () use ($user) {
             $now = Carbon::now();
             $today = $now->toDateString();
 
@@ -845,13 +845,48 @@ class ReportController extends Controller
 
                 // Current-state sales funnel (snapshot of open pipeline, not
                 // scoped to this month — labels in the UI say so).
-                $freshLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'cold')->count();
-                $warmLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'warm')->count();
-                $hotLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->where('temperature', 'hot')->count();
+                $wonStageIds = DB::table('lead_stages')->where('slug', 'won')->pluck('id')->toArray();
+                $lostStageIds = DB::table('lead_stages')->where('slug', 'lost')->pluck('id')->toArray();
+                $closedStageIds = array_merge($wonStageIds, $lostStageIds);
+
+                $freshLeadsCount = DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where('is_converted', false)
+                    ->whereNotIn('stage_id', $closedStageIds)
+                    ->where('temperature', 'cold')
+                    ->count();
+
+                $warmLeadsCount = DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where('is_converted', false)
+                    ->whereNotIn('stage_id', $closedStageIds)
+                    ->where('temperature', 'warm')
+                    ->count();
+
+                $hotLeadsCount = DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where('is_converted', false)
+                    ->whereNotIn('stage_id', $closedStageIds)
+                    ->where('temperature', 'hot')
+                    ->count();
+
                 $quotesSentCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'sent')->count();
-                $wonCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', true)->count();
+
+                $wonCount = DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where(function($q) use ($wonStageIds) {
+                        $q->where('is_converted', true)
+                          ->orWhereIn('stage_id', $wonStageIds);
+                    })
+                    ->count();
+
                 $lostCount = DB::table('quotes')->whereNull('deleted_at')->where('status', 'rejected')->count();
-                $pipelineValue = (float) DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->sum('estimated_monthly_budget');
+
+                $pipelineValue = (float) DB::table('leads')
+                    ->whereNull('deleted_at')
+                    ->where('is_converted', false)
+                    ->whereNotIn('stage_id', $closedStageIds)
+                    ->sum('estimated_monthly_budget');
 
                 // Real scheduled follow-ups still open (lead_followups rows),
                 // not "every unconverted lead" — the PRD's "Pending Follow-ups"

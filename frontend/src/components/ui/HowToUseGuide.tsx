@@ -20,7 +20,7 @@ interface HowToUseGuideProps {
   content: HowToUseContent;
 }
 
-function GuideBody({ title, content, onClose }: { title: string; content: HowToUseContent; onClose: () => void }) {
+export function GuideBody({ title, content, onClose }: { title: string; content: HowToUseContent; onClose: () => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
