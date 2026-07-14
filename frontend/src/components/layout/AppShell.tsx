@@ -11,7 +11,7 @@ import {
   Search, Bell, Sun, Moon, LogOut, User, ChevronDown,
   UserCog, ShieldCheck, Sparkles, Briefcase,
   DollarSign, Shield, Plus,
-  Zap, Home, ArrowRight, Command,
+  Zap, Home, ArrowRight, Command, Menu, X,
 } from 'lucide-react';
 import { cn, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -183,6 +183,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     [isNavItemVisible]
   );
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     sales: true, operations: true, finance: true, admin: true,
@@ -284,15 +285,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <div className="app-shell">
 
+        {/* Mobile Sidebar Overlay */}
+        {mobileMenuOpen && (
+          <div
+            className="mobile-sidebar-overlay"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <aside style={{
-          width: sidebarWidth,
-          background: 'var(--surface)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column',
-          flexShrink: 0, overflow: 'hidden',
-          transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-        }}>
+        <aside
+          className={cn(mobileMenuOpen && 'mobile-open')}
+          style={{
+            width: sidebarWidth,
+            background: 'var(--surface)',
+            borderRight: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column',
+            flexShrink: 0, overflow: 'hidden',
+            transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
 
           {/* Workspace Header */}
           <div className="sidebar-workspace">
@@ -316,6 +328,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <ChevronDown size={13} className="workspace-chevron" />
               </>
             )}
+            {/* Mobile close button */}
+            <button
+              className="sidebar-close-btn mobile-only"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close menu"
+            >
+              <X size={15} />
+            </button>
           </div>
 
           {/* Nav */}
@@ -352,6 +372,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             href={item.href}
                             title={collapsed ? item.label : undefined}
                             className={cn('nav-item-v2', collapsed && 'collapsed-icon', isActive && 'active')}
+                            onClick={() => setMobileMenuOpen(false)}
                           >
                             <Icon size={collapsed ? 16 : 15} className="nav-item-icon-v2" />
                             {!collapsed && <span>{item.label}</span>}
@@ -368,7 +389,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {/* Footer */}
           <div className="sidebar-footer">
             {user && (
-              <div className="sidebar-user" title={collapsed ? user.name : undefined}>
+              <div
+                className="sidebar-user"
+                title={collapsed ? user.name : undefined}
+                onClick={() => setMobileMenuOpen(false)}
+              >
                 <div className="avatar avatar-sm" style={{ flexShrink: 0 }}>
                   {user.avatar_url
                     ? <img src={user.avatar_url} alt={user.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
@@ -386,10 +411,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
             )}
+
+            {/* Mobile-only theme toggle */}
+            <button
+              onClick={() => {
+                toggleTheme();
+                setMobileMenuOpen(false);
+              }}
+              title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+              className="sidebar-theme-toggle-btn mobile-only"
+            >
+              {mounted && resolvedTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+              <span>Toggle Theme</span>
+            </button>
+
+            {/* Collapse button (desktop-only class added) */}
             <button
               onClick={() => setCollapsed((p) => !p)}
               title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              className="sidebar-collapse-btn"
+              className="sidebar-collapse-btn desktop-only"
             >
               {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>Collapse</span></>}
             </button>
@@ -402,9 +442,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {/* Premium Topbar */}
           <header className="topbar-v2">
 
+            {/* Mobile Menu Button */}
+            <button
+              className="topbar-mobile-menu-btn"
+              onClick={() => setMobileMenuOpen(true)}
+              title="Open Menu"
+              aria-label="Open Menu"
+            >
+              <Menu size={16} />
+            </button>
+
             {/* Breadcrumb */}
             <nav className="topbar-breadcrumb" aria-label="Breadcrumb">
-              <Link href="/dashboard" className="topbar-breadcrumb-item" title="Home">
+              <Link href="/dashboard" className="topbar-breadcrumb-item" title="Home" onClick={() => setMobileMenuOpen(false)}>
                 <Home size={13} />
               </Link>
               {breadcrumbs.map((crumb) => (
@@ -412,7 +462,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <ChevronRight size={11} style={{ color: 'var(--border)' }} />
                   {crumb.isLast
                     ? <span className="topbar-breadcrumb-item current">{crumb.label}</span>
-                    : <Link href={crumb.href} className="topbar-breadcrumb-item">{crumb.label}</Link>
+                    : <Link href={crumb.href} className="topbar-breadcrumb-item" onClick={() => setMobileMenuOpen(false)}>{crumb.label}</Link>
                   }
                 </span>
               ))}
@@ -547,10 +597,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       </div>
                     </div>
                     <div className="topbar-user-menu-items">
-                      <Link href="/settings/profile" className="topbar-menu-item" onClick={() => setUserMenuOpen(false)}>
+                      <Link href="/settings/profile" className="topbar-menu-item" onClick={() => { setUserMenuOpen(false); setMobileMenuOpen(false); }}>
                         <User size={14} /> Profile & Account
                       </Link>
-                      <Link href="/settings" className="topbar-menu-item" onClick={() => setUserMenuOpen(false)}>
+                      <Link href="/settings" className="topbar-menu-item" onClick={() => { setUserMenuOpen(false); setMobileMenuOpen(false); }}>
                         <Settings size={14} /> Workspace Settings
                       </Link>
                       <div className="topbar-menu-divider" />

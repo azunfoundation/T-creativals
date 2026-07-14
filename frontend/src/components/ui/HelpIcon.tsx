@@ -568,7 +568,7 @@ function computePosition(triggerRect: DOMRect): PanelPosition {
   }
 
   // ── Clamp so the panel is always fully inside the viewport ──
-  const maxLeft = vw - PANEL_WIDTH - p;
+  const maxLeft = Math.max(p, vw - PANEL_WIDTH - p);
   left = Math.max(p, Math.min(left, maxLeft));
   top  = Math.max(p, Math.min(top, vh - p));
 

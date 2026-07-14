@@ -2465,4 +2465,202 @@
   }
 }
 
+/* ============================================================
+   MOBILE & TABLET RESPONSIVENESS UPGRADES (COMPLETE)
+   ============================================================ */
+
+/* Helper classes */
+.mobile-only {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: flex !important;
+  }
+
+  /* 1. Sidebar to Collapsible Drawer */
+  .app-shell aside {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: var(--sidebar-width) !important;
+    z-index: 100 !important;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base) !important;
+    box-shadow: var(--shadow-lg) !important;
+  }
+  .app-shell aside.mobile-open {
+    transform: translateX(0) !important;
+  }
+
+  /* Mobile overlay backdrop */
+  .mobile-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+    animation: fadeIn var(--transition-fast) ease;
+  }
+
+  /* Close button inside sidebar */
+  .sidebar-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    margin-left: auto;
+    transition: all var(--transition-fast);
+  }
+  .sidebar-close-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  /* Theme Toggle button in mobile sidebar */
+  .sidebar-theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-md);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    cursor: pointer;
+    width: calc(100% - 1.5rem);
+    margin: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+  }
+  .sidebar-theme-toggle-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  /* 2. Mobile topbar & Hamburger button */
+  .topbar-mobile-menu-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+  }
+  .topbar-mobile-menu-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  /* Hide details from user button to fit screens */
+  .topbar-user-btn .topbar-user-name,
+  .topbar-user-btn svg {
+    display: none !important;
+  }
+  .topbar-user-btn {
+    padding: 0 !important;
+    background: none !important;
+    border: none !important;
+  }
+
+  /* Breadcrumbs: show only current page title as mobile header title */
+  .topbar-breadcrumb {
+    font-size: 0.875rem !important;
+    font-weight: 600 !important;
+  }
+  .topbar-breadcrumb-item:not(.current),
+  .topbar-breadcrumb span,
+  .topbar-breadcrumb a[title="Home"] {
+    display: none !important;
+  }
+
+  /* Ensure main layout stacking */
+  .board-layout, .crm-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 3. Table horizontal scroll container */
+  .data-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+    border-bottom: 2px solid var(--border-subtle);
+  }
+}
+
+@media (max-width: 767px) {
+  /* Search input collapses to a neat icon button on mobile */
+  .topbar-search {
+    min-width: 0 !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+  .topbar-search-label,
+  .topbar-search .topbar-kbd {
+    display: none !important;
+  }
+
+  /* Hide topbar shortcuts for themes and AI as they reside in sidebar drawer */
+  #theme-toggle,
+  .topbar-ai-btn {
+    display: none !important;
+  }
+}
+
+/* 4. Global Form Field Grid Stacking (screens <= 600px) */
+@media (max-width: 600px) {
+  form div[style*="display: grid"],
+  form div[style*="display:grid"],
+  .modal div[style*="display: grid"],
+  .modal div[style*="display:grid"] {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  /* Stack status metrics on task/project/crm boards */
+  div[style*="gridTemplateColumns: 'repeat(5, 1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(3, 1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(3,1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(5,1fr)'"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  /* Form field grids inline style fallback */
+  div[style*="gridTemplateColumns: '1fr 1fr'"],
+  div[style*="gridTemplateColumns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 374px) {
+  /* Ultra-small mobile layout metrics stack fully */
+  div[style*="gridTemplateColumns: 'repeat(5, 1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(3, 1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(3,1fr)'"],
+  div[style*="gridTemplateColumns: 'repeat(5,1fr)'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
 
