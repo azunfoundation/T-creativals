@@ -45,3 +45,6 @@ next-env.d.ts
 # dev/scaffold artifacts
 refactor.js
 refactor.py
+
+.vercel
+.env*

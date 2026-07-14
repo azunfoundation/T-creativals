@@ -76,7 +76,7 @@ class LeadReportService
                 'lead_sources.name as source_name',
                 'lead_sources.color as source_color',
                 DB::raw('count(leads.id) as lead_count'),
-                DB::raw('sum(case when leads.is_converted = 1 then 1 else 0 end) as conversion_count')
+                DB::raw('sum(case when leads.is_converted then 1 else 0 end) as conversion_count')
             )
             ->whereNull('leads.deleted_at')
             ->groupBy('lead_sources.name', 'lead_sources.color');
@@ -101,8 +101,8 @@ class LeadReportService
             ->select(
                 'users.name as exec_name',
                 DB::raw('count(leads.id) as lead_count'),
-                DB::raw('sum(case when leads.is_converted = 1 then 1 else 0 end) as converted_count'),
-                DB::raw('sum(case when leads.is_converted = 0 then leads.estimated_monthly_budget else 0 end) as total_pipeline_value')
+                DB::raw('sum(case when leads.is_converted then 1 else 0 end) as converted_count'),
+                DB::raw('sum(case when leads.is_converted then 0 else leads.estimated_monthly_budget end) as total_pipeline_value')
             )
             ->whereNull('leads.deleted_at')
             ->groupBy('users.name');

@@ -466,7 +466,7 @@ class ReportController extends Controller
                 ->select(
                     'projects.name as project_name',
                     DB::raw('sum(timesheets.hours_logged) as total_hours'),
-                    DB::raw('sum(case when timesheets.is_billable = 1 then timesheets.hours_logged else 0 end) as billable_hours')
+                    DB::raw('sum(case when timesheets.is_billable then timesheets.hours_logged else 0 end) as billable_hours')
                 )
                 ->whereNull('timesheets.deleted_at')
                 ->whereIn('timesheets.status', ['submitted', 'approved'])
