@@ -207,15 +207,27 @@ class TimesheetController extends Controller
             $approver = User::where('email', 'founder@creativals.com')->first();
         }
 
-        if ($approver && $approver->email) {
-            $pref = NotificationPreference::where('user_id', $approver->id)
-                ->where('event_type', 'timesheet_submitted')
-                ->first();
-            if ($pref && $pref->email) {
-                try {
-                    Mail::to($approver->email)->send(new TimesheetSubmittedMail($timesheet));
-                } catch (\Throwable $e) {
-                    // Ignore mail failures
+        if ($approver) {
+            \App\Services\NotificationService::alert('timesheet_submitted', [
+                'user_id' => $approver->id,
+                'triggered_by' => $timesheet->user_id,
+                'type' => 'approval_requested',
+                'title' => 'Timesheet Submitted',
+                'body' => ($timesheet->user?->name ?? 'A team member') . " submitted a timesheet for approval ({$timesheet->hours_logged} hours).",
+                'action_url' => "/timesheets/approvals",
+                'metadata' => ['timesheet_id' => $timesheet->id],
+            ]);
+
+            if ($approver->email) {
+                $pref = NotificationPreference::where('user_id', $approver->id)
+                    ->where('event_type', 'timesheet_submitted')
+                    ->first();
+                if ($pref && $pref->email) {
+                    try {
+                        Mail::to($approver->email)->send(new TimesheetSubmittedMail($timesheet));
+                    } catch (\Throwable $e) {
+                        // Ignore mail failures
+                    }
                 }
             }
         }
@@ -252,6 +264,19 @@ class TimesheetController extends Controller
         });
 
         $timesheet->load(['user', 'task', 'project']);
+
+        if ($timesheet->user_id) {
+            \App\Services\NotificationService::alert('timesheet_approved', [
+                'user_id' => $timesheet->user_id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'timesheet_approved',
+                'title' => 'Timesheet Approved',
+                'body' => "Your timesheet for {$timesheet->hours_logged} hours has been approved.",
+                'action_url' => "/timesheets",
+                'metadata' => ['timesheet_id' => $timesheet->id],
+            ]);
+        }
+
         return (new TimesheetResource($timesheet))->response();
     }
 
@@ -282,6 +307,19 @@ class TimesheetController extends Controller
         });
 
         $timesheet->load(['user', 'task', 'project']);
+
+        if ($timesheet->user_id) {
+            \App\Services\NotificationService::alert('timesheet_rejected', [
+                'user_id' => $timesheet->user_id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'timesheet_rejected',
+                'title' => 'Timesheet Rejected',
+                'body' => "Your timesheet for {$timesheet->hours_logged} hours has been rejected. Reason: {$validated['notes']}",
+                'action_url' => "/timesheets",
+                'metadata' => ['timesheet_id' => $timesheet->id],
+            ]);
+        }
+
         return (new TimesheetResource($timesheet))->response();
     }
 

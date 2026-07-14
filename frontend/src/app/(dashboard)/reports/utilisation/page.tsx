@@ -16,13 +16,8 @@ export default function TeamUtilisationReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -57,9 +52,7 @@ export default function TeamUtilisationReport() {
       key: 'department',
       label: 'Department',
       render: (val: any) => (
-        <span className="badge badge-muted">
-          {val || 'General'}
-        </span>
+        <span className="badge badge-muted">{val || 'General'}</span>
       ),
     },
     { key: 'expected_hours', label: 'Target Hours', align: 'center' as const, sortable: true },
@@ -72,11 +65,11 @@ export default function TeamUtilisationReport() {
       sortable: true,
       render: (val: any) => {
         const pct = Number(val);
-        let color = 'text-slate-400';
-        if (pct >= 85) color = 'text-emerald-400 font-semibold';
-        else if (pct >= 65) color = 'text-sky-400';
-        else if (pct > 0) color = 'text-amber-400';
-        return <span className={`font-mono ${color}`}>{pct}%</span>;
+        let color = 'var(--text-muted)';
+        if (pct >= 85) color = 'var(--success)';
+        else if (pct >= 65) color = 'var(--info)';
+        else if (pct > 0) color = 'var(--warning)';
+        return <span style={{ fontFamily: 'monospace', fontWeight: 600, color }}>{pct}%</span>;
       },
     },
     {
@@ -84,7 +77,7 @@ export default function TeamUtilisationReport() {
       label: 'Billable Rate',
       align: 'right' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono font-medium text-emerald-455">{val}%</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--success)' }}>{val}%</span>,
     },
   ];
 
@@ -95,14 +88,14 @@ export default function TeamUtilisationReport() {
       label: 'Total Hours Logged',
       align: 'center' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono text-slate-300">{val} hrs</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{val} hrs</span>,
     },
     {
       key: 'billable_hours',
       label: 'Billable Hours',
       align: 'right' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono text-emerald-400">{val} hrs</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--success)' }}>{val} hrs</span>,
     },
   ];
 
@@ -157,48 +150,21 @@ export default function TeamUtilisationReport() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Team Size"
-              value={data.summary.team_size}
-              subtext="Active Employees"
-              icon={<Users className="w-5 h-5 text-sky-400" />}
-            />
-            <KpiCard
-              title="Total Hours Logged"
-              value={`${data.summary.total_logged_hours} h`}
-              subtext="Approved / Submitted"
-              icon={<Clock className="w-5 h-5" />}
-            />
-            <KpiCard
-              title="Billable Hours"
-              value={`${data.summary.total_billable_hours} h`}
-              subtext="Invoiced tasks"
-              icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            />
-            <KpiCard
-              title="Billable Rate"
-              value={`${data.summary.billable_rate_pct}%`}
-              subtext="Billable / Logged"
-              icon={<Flame className="w-5 h-5 text-amber-400" />}
-            />
-            <KpiCard
-              title="Avg Utilisation"
-              value={`${data.summary.avg_utilisation_pct}%`}
-              subtext="Logged / Available"
-              icon={<ShieldAlert className="w-5 h-5 text-violet-400" />}
-            />
+            <KpiCard title="Team Size" value={data.summary.team_size} subtext="Active Employees" icon={<Users size={18} />} accent="info" />
+            <KpiCard title="Total Hours Logged" value={`${data.summary.total_logged_hours} h`} subtext="Approved / Submitted" icon={<Clock size={18} />} accent="muted" />
+            <KpiCard title="Billable Hours" value={`${data.summary.total_billable_hours} h`} subtext="Invoiced tasks" icon={<CheckCircle2 size={18} />} accent="success" />
+            <KpiCard title="Billable Rate" value={`${data.summary.billable_rate_pct}%`} subtext="Billable / Logged" icon={<Flame size={18} />} accent="warning" />
+            <KpiCard title="Avg Utilisation" value={`${data.summary.avg_utilisation_pct}%`} subtext="Logged / Available" icon={<ShieldAlert size={18} />} accent="accent" />
           </div>
 
+          {/* Tables Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
-            {/* Left Column: Team breakdown */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Resource Allocation Breakdown</h3>
+            <div className="report-section">
+              <p className="report-section-title">Resource Allocation Breakdown</p>
               <ReportTable columns={memberColumns} data={data.breakdown} />
             </div>
-
-            {/* Right Column: Top Projects by Logged Hours */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Top Projects by Hours Logged</h3>
+            <div className="report-section">
+              <p className="report-section-title">Top Projects by Hours Logged</p>
               <ReportTable columns={projectColumns} data={data.top_projects_by_hours} />
             </div>
           </div>

@@ -72,24 +72,7 @@ interface LineItemState {
   tax_rate: number;
 }
 
-// ── Fallback Mock Data ──────────────────────────────────────────
-const MOCK_LEADS: Lead[] = [
-  { id: 1, company_name: 'Apex Designs', budget: 100000, priority: 'medium', temperature: 'warm', contacts: [], activities: [], stage_id: 1, source_id: 1, created_at: '', updated_at: '' },
-  { id: 2, company_name: 'NovaTech Corp', budget: 500000, priority: 'high', temperature: 'hot', contacts: [], activities: [], stage_id: 1, source_id: 1, created_at: '', updated_at: '' },
-  { id: 3, company_name: 'GreenLife Retail', budget: 80000, priority: 'low', temperature: 'cold', contacts: [], activities: [], stage_id: 1, source_id: 1, created_at: '', updated_at: '' },
-  { id: 4, company_name: 'EduPath Learning', budget: 120000, priority: 'medium', temperature: 'warm', contacts: [], activities: [], stage_id: 1, source_id: 1, created_at: '', updated_at: '' }
-];
-
-const MOCK_SERVICES: Service[] = [
-  { id: 1, category_id: 1, name: 'SEO Optimization', description: 'Comprehensive on-page and off-page search engine optimization to boost organic rank.', base_price: 25000, unit: 'month', tax_rate: 18 },
-  { id: 2, category_id: 1, name: 'Social Media Management', description: 'Handling 3 major platforms, content curation, weekly postings, and engagement reports.', base_price: 35000, unit: 'month', tax_rate: 18 },
-  { id: 3, category_id: 1, name: 'Google Ads Management', description: 'Setup, copywriting, budget optimization, and management of Google search/display campaigns.', base_price: 15000, unit: 'month', tax_rate: 18 },
-  { id: 4, category_id: 2, name: 'Next.js Web App Development', description: 'Custom full-stack web applications using React, Next.js 15, and Tailwind CSS.', base_price: 150000, unit: 'project', tax_rate: 18 },
-  { id: 5, category_id: 2, name: 'Mobile App Development (iOS/Android)', description: 'Cross-platform mobile apps built using React Native or Flutter.', base_price: 300000, unit: 'project', tax_rate: 18 },
-  { id: 6, category_id: 2, name: 'UI/UX Design System', description: 'High-fidelity Figma prototypes, design tokens, responsive components, and style guides.', base_price: 75000, unit: 'project', tax_rate: 18 },
-  { id: 7, category_id: 3, name: 'Logo & Brand Guidelines', description: 'Core logo design with 3 variations plus a brand guidelines PDF covering fonts, colors, usage.', base_price: 50000, unit: 'project', tax_rate: 18 },
-  { id: 8, category_id: 4, name: 'Website Copywriting', description: 'Engaging, SEO-friendly copywriting for up to 5 web pages.', base_price: 30000, unit: 'project', tax_rate: 18 },
-];
+// (mock leads and services array removed — real data from backend API must be used)
 
 function QuoteBuilderForm() {
   const { showToast } = useToast();
@@ -128,28 +111,20 @@ function QuoteBuilderForm() {
   const { data: leadsRes } = useQuery({
     queryKey: ['leads'],
     queryFn: async () => {
-      try {
-        const res = await leadsApi.list({ per_page: 100 });
-        return res.data?.data || MOCK_LEADS;
-      } catch {
-        return MOCK_LEADS;
-      }
+      const res = await leadsApi.list({ per_page: 100 });
+      return res.data?.data || [];
     }
   });
 
   const { data: services = [] } = useQuery<Service[]>({
     queryKey: ['services'],
     queryFn: async () => {
-      try {
-        const res = await servicesApi.list();
-        const data = res.data || [];
-        return data.map((s: any) => ({
-          ...s,
-          base_price: s.base_price || s.default_price || 0
-        }));
-      } catch {
-        return MOCK_SERVICES;
-      }
+      const res = await servicesApi.list();
+      const data = res.data || [];
+      return data.map((s: any) => ({
+        ...s,
+        base_price: s.base_price || s.default_price || 0
+      }));
     }
   });
 
@@ -321,7 +296,6 @@ function QuoteBuilderForm() {
 
   const finalNetTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  // Apply Coupon Action
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) {
       setCouponError('Please enter a coupon code.');
@@ -336,47 +310,19 @@ function QuoteBuilderForm() {
       const data = res.data;
       
       if (data.valid) {
-        // Mock coupon details
-        let discType: 'percentage' | 'fixed' = 'fixed';
-        let discVal = data.discount_amount;
-        
-        if (couponCode.toLowerCase().includes('10')) {
-          discType = 'percentage';
-          discVal = 10;
-        } else if (couponCode.toLowerCase().includes('20')) {
-          discType = 'percentage';
-          discVal = 20;
-        }
-
         setAppliedCoupon({
-          code: couponCode.trim(),
-          discount_type: discType,
-          discount_value: discVal,
+          code: couponCode.trim().toUpperCase(),
+          discount_type: 'fixed',
+          discount_value: data.discount_amount,
         });
-        setCouponSuccess(data.message || `Coupon ${couponCode} applied successfully!`);
+        setCouponSuccess(data.message || `Coupon ${couponCode.toUpperCase()} applied successfully!`);
       } else {
         setCouponError(data.message || 'Coupon is not valid for this amount.');
         setAppliedCoupon(null);
       }
-    } catch {
-      // Fallback Mock validation
-      const code = couponCode.trim().toUpperCase();
-      if (code === 'WELCOME10') {
-        setAppliedCoupon({ code, discount_type: 'percentage', discount_value: 10 });
-        setCouponSuccess('WELCOME10 applied: 10% discount on total quote amount!');
-      } else if (code === 'FLAT5000' && totalBeforeCoupon >= 30000) {
-        setAppliedCoupon({ code, discount_type: 'fixed', discount_value: 5000 });
-        setCouponSuccess('FLAT5000 applied: Flat INR 5,000 off!');
-      } else if (code === 'FLAT5000' && totalBeforeCoupon < 30000) {
-        setCouponError('FLAT5000 requires minimum order value of INR 30,000.');
-        setAppliedCoupon(null);
-      } else if (code === 'CREATIVALS20') {
-        setAppliedCoupon({ code, discount_type: 'percentage', discount_value: 20 });
-        setCouponSuccess('CREATIVALS20 applied: Special 20% bundle discount!');
-      } else {
-        setCouponError('Invalid coupon code. Try WELCOME10, FLAT5000, or CREATIVALS20.');
-        setAppliedCoupon(null);
-      }
+    } catch (err: any) {
+      setCouponError(getApiErrorMessage(err, 'Failed to validate coupon code. Please try again.'));
+      setAppliedCoupon(null);
     }
   };
 
@@ -448,7 +394,7 @@ function QuoteBuilderForm() {
     }
   };
 
-  const leads = leadsRes || MOCK_LEADS;
+  const leads = leadsRes || [];
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

@@ -40,8 +40,12 @@ const nextConfig: NextConfig = {
           { key: "X-XSS-Protection", value: "1; mode=block" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
+            // Allow the microphone for our own origin (self) so the AI Voice
+            // Call feature works; keep camera and geolocation fully disabled.
+            // Note: `microphone=()` disables the mic for the document itself,
+            // which overrides all OS/browser permission settings.
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(), microphone=(self), geolocation=()",
           },
         ],
       },

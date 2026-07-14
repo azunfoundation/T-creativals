@@ -49,15 +49,14 @@ export default function PayrollRunDetailsPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (err) {
-      console.error(`Failed to export ${format}`, err);
-      showToast(`Failed to export ${format}`, 'error');
+    } catch {
+      showToast(`Failed to export ${format.toUpperCase()}. Please try again.`, 'error');
     }
   };
 
-  if (isLoading) return <div style={{ padding: '2rem' }}>Loading...</div>;
-  if (isError) return <div style={{ padding: '2rem', color: 'var(--danger)' }}>Couldn't load this payroll run.</div>;
-  if (!run) return <div style={{ padding: '2rem' }}>Run not found</div>;
+  if (isLoading) return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading payroll run…</div>;
+  if (isError) return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--danger)' }}>Couldn't load this payroll run. Please go back and try again.</div>;
+  if (!run) return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Payroll run not found.</div>;
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>

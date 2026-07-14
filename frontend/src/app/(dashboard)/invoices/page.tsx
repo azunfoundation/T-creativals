@@ -12,7 +12,8 @@ import { useToast } from '@/hooks/useToast';
 import { 
   Plus, Search, Receipt, ChevronLeft, ChevronRight, Eye, 
   Calendar, DollarSign, Check, X, Banknote, LayoutGrid, 
-  List, Trash2, ArrowUpRight, ArrowDownLeft, CreditCard, Clock, AlertTriangle 
+  List, Trash2, ArrowUpRight, ArrowDownLeft, CreditCard, Clock, AlertTriangle,
+  Download, Filter, MoreVertical, FileText, TrendingUp, ChevronDown, ArrowRight
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
@@ -233,11 +234,11 @@ export default function InvoicesDashboard() {
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       
       {/* ── Top Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '1.25rem' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Receipt className="text-accent" size={24} />
-            Invoices & Billings
+            Invoices & Billing
             <HelpIcon title="Invoices" content={{
               what: 'An invoice is the official bill you send a client for agreed work. This page lists all invoices and the payments recorded against them.',
               why: 'It is the single place to see what has been billed, what has been collected, and which clients still owe money.',
@@ -248,8 +249,8 @@ export default function InvoicesDashboard() {
             Issue client invoices, track collection schedules, record transactions, and analyze aging receivables.
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <HowToUseGuide moduleKey="invoices" title="How Invoices Work" content={INVOICES_HOWTO} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <HowToUseGuide moduleKey="invoices" title="How to Use" content={INVOICES_HOWTO} />
           <Link href="/invoices/create" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Plus size={16} /> Create Invoice
           </Link>
@@ -258,83 +259,103 @@ export default function InvoicesDashboard() {
 
       {/* ── Stats Summary Cards ── */}
       <div className="kpi-grid kpi-grid-4">
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <span className="kpi-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                Total Invoiced
-                <HelpIcon text="Sum of all invoice totals, excluding cancelled and void invoices." />
+              <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                TOTAL INVOICED
               </span>
-              <span className="kpi-value">{formatCurrency(totalInvoiced)}</span>
+              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalInvoiced)}</span>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{allInvoices.filter(i => !['void', 'cancelled'].includes(i.status)).length}</span> Active Invoices
+              </div>
             </div>
-            <div style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--surface-elevated)', color: 'var(--text-secondary)', display: 'flex' }}>
-              <Banknote size={16} />
+            <div style={{ padding: '0.75rem', borderRadius: '50%', background: 'var(--accent-subtle)', color: 'var(--accent)', display: 'flex' }}>
+              <FileText size={20} />
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            <Clock size={12} /> Active invoice schedules
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button style={{ color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              View schedules <ArrowRight size={12} />
+            </button>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <span className="kpi-label">Payments Collected</span>
-              <span className="kpi-value text-success">{formatCurrency(totalCollected)}</span>
+              <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                PAYMENTS COLLECTED
+              </span>
+              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalCollected)}</span>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Collection Rate: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0}%</span>
+              </div>
             </div>
-            <div style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--success-subtle)', color: 'var(--success)', display: 'flex' }}>
-              <ArrowDownLeft size={16} />
+            <div style={{ padding: '0.75rem', borderRadius: '50%', background: 'var(--success-subtle)', color: 'var(--success)', display: 'flex' }}>
+              <Banknote size={20} />
             </div>
           </div>
-          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Collection Rate: <span className="text-success font-bold">{totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0}%</span>
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button style={{ color: 'var(--success)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              View payments <ArrowRight size={12} />
+            </button>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <span className="kpi-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                Outstanding Balance
-                <HelpIcon text="Money clients still owe: invoice totals minus payments recorded, across all unpaid invoices." />
+              <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                OUTSTANDING BALANCE
               </span>
-              <span className="kpi-value text-warning">{formatCurrency(totalOutstanding)}</span>
+              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOutstanding)}</span>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Pending user logs & collections
+              </div>
             </div>
-            <div style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--warning-subtle)', color: 'var(--warning)', display: 'flex' }}>
-              <ArrowUpRight size={16} />
+            <div style={{ padding: '0.75rem', borderRadius: '50%', background: 'var(--warning-subtle)', color: 'var(--warning)', display: 'flex' }}>
+              <ArrowUpRight size={20} />
             </div>
           </div>
-          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Pending user logs & collections
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button style={{ color: 'var(--warning)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              View outstanding <ArrowRight size={12} />
+            </button>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <span className="kpi-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                Overdue Receivables
-                <HelpIcon text="Unpaid balance on invoices whose due date has already passed — chase these first." />
+              <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                OVERDUE RECEIVABLES
               </span>
-              <span className="kpi-value text-danger">{formatCurrency(totalOverdue)}</span>
+              <span className="kpi-value text-danger" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOverdue)}</span>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Needs follow up action
+              </div>
             </div>
-            <div style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--danger-subtle)', color: 'var(--danger)', display: 'flex' }}>
-              <AlertTriangle size={16} />
+            <div style={{ padding: '0.75rem', borderRadius: '50%', background: 'var(--danger-subtle)', color: 'var(--danger)', display: 'flex' }}>
+              <AlertTriangle size={20} />
             </div>
           </div>
-          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Needs follow-up action
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button style={{ color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              View overdue <ArrowRight size={12} />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* ── Tabs Navigation ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+      {/* ── Tabs Navigation & Filters ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', paddingTop: '0.5rem' }}>
         <div style={{ display: 'flex', gap: '1.5rem' }}>
           <button
             onClick={() => setActiveTab('invoices')}
             style={{
-              paddingBottom: '0.5rem',
+              paddingBottom: '0.75rem',
+              marginBottom: '-0.75rem',
               fontSize: '0.875rem',
               fontWeight: 600,
               borderBottom: '2px solid',
@@ -348,7 +369,8 @@ export default function InvoicesDashboard() {
           <button
             onClick={() => setActiveTab('payments')}
             style={{
-              paddingBottom: '0.5rem',
+              paddingBottom: '0.75rem',
+              marginBottom: '-0.75rem',
               fontSize: '0.875rem',
               fontWeight: 600,
               borderBottom: '2px solid',
@@ -361,72 +383,58 @@ export default function InvoicesDashboard() {
           </button>
         </div>
 
-        {/* View Mode Toggle (only for invoices tab) */}
         {activeTab === 'invoices' && (
-          <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', padding: '2px', borderRadius: 'var(--radius-md)' }}>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`btn btn-icon ${viewMode === 'table' ? 'btn-secondary' : ''}`}
-              style={{ padding: '0.375rem', borderRadius: 'var(--radius-sm)', color: viewMode === 'table' ? 'var(--text-primary)' : 'var(--text-muted)' }}
-              title="Table View"
-            >
-              <List size={16} />
+          <div style={{ display: 'flex', gap: '0.375rem' }}>
+            <button onClick={() => setViewMode('table')} className={`btn btn-icon ${viewMode === 'table' ? 'btn-secondary' : 'btn-ghost'}`} style={{ color: viewMode === 'table' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+              <List size={18} />
             </button>
-            <button
-              onClick={() => setViewMode('board')}
-              className={`btn btn-icon ${viewMode === 'board' ? 'btn-secondary' : ''}`}
-              style={{ padding: '0.375rem', borderRadius: 'var(--radius-sm)', color: viewMode === 'board' ? 'var(--text-primary)' : 'var(--text-muted)' }}
-              title="Board View"
-            >
-              <LayoutGrid size={16} />
+            <button onClick={() => setViewMode('board')} className={`btn btn-icon ${viewMode === 'board' ? 'btn-secondary' : 'btn-ghost'}`} style={{ color: viewMode === 'board' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+              <LayoutGrid size={18} />
             </button>
           </div>
         )}
       </div>
 
-      {/* ── Tab: Invoices ── */}
       {activeTab === 'invoices' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Filter Bar */}
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            {/* Search */}
-            <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
-              <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          {/* Filters Row */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ position: 'relative', width: '320px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 type="text"
                 placeholder="Search by invoice #, client, or title..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input"
-                style={{ paddingLeft: '2.5rem', width: '100%' }}
+                style={{ paddingLeft: '2.5rem', borderRadius: '9999px', fontSize: '0.875rem', backgroundColor: 'var(--surface-elevated)' }}
               />
             </div>
 
-            {/* Filter Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="form-input"
-                style={{ width: '180px' }}
-              >
-                <option value="all">All Invoices</option>
-                {INVOICE_STATUSES.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-              <HelpIcon title="Invoice Statuses" content={{
-                what: 'Filters the list to one stage of the invoice lifecycle.',
-                steps: [
-                  'Draft — being written, not yet reviewed.',
-                  'Pending Review / Pending Approval — waiting for manager sign-off.',
-                  'Approved — signed off, ready to email to the client.',
-                  'Sent — delivered to the client, awaiting payment.',
-                  'Partially Paid / Paid — some or all money received.',
-                  'Overdue — due date passed with a balance still owed.',
-                  'Void / Cancelled — no longer valid; excluded from totals.',
-                ],
-              }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.25rem 0.75rem', backgroundColor: 'var(--surface)', gap: '0.5rem', cursor: 'pointer', height: '36px' }}>
+                <Calendar size={14} className="text-muted" />
+                <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>All Time</span>
+                <ChevronDown size={14} className="text-muted" style={{ marginLeft: '0.25rem' }} />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.125rem 0.5rem', backgroundColor: 'var(--surface)', height: '36px' }}>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.875rem', fontWeight: 500, padding: '0.25rem', width: '130px', cursor: 'pointer', appearance: 'none' }}
+                >
+                  <option value="all">All Invoices</option>
+                  {INVOICE_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="text-muted" />
+              </div>
+
+              <button className="btn btn-secondary btn-icon" style={{ borderRadius: 'var(--radius-md)', height: '36px', width: '36px' }}>
+                <Filter size={16} />
+              </button>
             </div>
           </div>
 
@@ -447,82 +455,100 @@ export default function InvoicesDashboard() {
                 }
               />
             ) : (
-              <div className="data-table-wrap">
+              <div className="data-table-wrap" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table">
-                    <thead>
+                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ backgroundColor: 'var(--surface-elevated)', borderBottom: '1px solid var(--border)' }}>
                       <tr>
-                        <th>Invoice #</th>
-                        <th>Client Name</th>
-                        <th>Invoice Title</th>
-                        <th>Total Amount</th>
-                        <th style={{ whiteSpace: 'nowrap' }}>
-                          Balance Due
-                          <HelpIcon text="Total amount minus payments recorded so far. Shows '— Paid' when nothing is owed." />
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Invoice #</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Client Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Invoice Title</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Amount</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          Balance Due <HelpIcon text="Total amount minus payments recorded so far. Shows '— Paid' when nothing is owed." />
                         </th>
-                        <th>Due Date</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'center' }}>Actions</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Due Date</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInvoices.map((inv) => (
-                        <tr key={inv.id}>
-                          <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
-                            {inv.invoice_number}
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inv.client?.name || 'N/A'}</div>
-                            {inv.client?.email && <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>{inv.client.email}</div>}
-                          </td>
-                          <td style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, color: 'var(--text-primary)' }}>
-                            {inv.title}
-                          </td>
-                          <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {formatCurrency(inv.total_amount, inv.currency)}
-                          </td>
-                          <td style={{ fontWeight: 600 }}>
-                            {inv.due_amount > 0 ? (
-                              <span style={{ color: 'var(--warning)' }}>{formatCurrency(inv.due_amount, inv.currency)}</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>— Paid</span>
-                            )}
-                          </td>
-                          <td style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-                            {formatDate(inv.due_date)}
-                          </td>
-                          <td>
-                            {getStatusBadge(inv.status)}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.375rem' }}>
-                              <Link
-                                href={`/invoices/${inv.id}`}
-                                className="btn btn-ghost btn-sm btn-icon"
-                                title="View Details"
-                              >
-                                <Eye size={14} />
-                              </Link>
-                              {inv.due_amount > 0 && inv.status !== 'cancelled' && inv.status !== 'void' && (
-                                <button
-                                  onClick={() => openPaymentDrawer(inv)}
-                                  className="btn btn-primary btn-sm"
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                >
-                                  Record
-                                </button>
+                      {filteredInvoices.map((inv) => {
+                        const isOverdue = inv.status === 'overdue' || (inv.due_amount > 0 && new Date(inv.due_date) < new Date());
+                        const isPaid = inv.status === 'paid' || inv.due_amount <= 0;
+                        const statusColor = isPaid ? 'var(--success)' : isOverdue ? 'var(--danger)' : inv.status === 'sent' ? 'var(--accent)' : 'var(--info)';
+                        const subtitle = inv.items?.[0]?.service?.name || inv.items?.[0]?.description || 'Services';
+                        
+                        return (
+                          <tr key={inv.id} style={{ borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--surface)', transition: 'background 0.2s', position: 'relative' }}>
+                            <td style={{ padding: '1rem', position: 'relative' }}>
+                              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', backgroundColor: statusColor }}></div>
+                              <span style={{ fontFamily: 'monospace', fontSize: '0.8125rem', color: 'var(--accent)', fontWeight: 600 }}>
+                                {inv.invoice_number}
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>{inv.client?.name || 'N/A'}</div>
+                              {inv.client?.email && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{inv.client.email}</div>}
+                            </td>
+                            <td style={{ padding: '1rem', maxWidth: '240px' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.title}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</div>
+                            </td>
+                            <td style={{ padding: '1rem', fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.875rem' }}>
+                              {formatCurrency(inv.total_amount, inv.currency)}
+                            </td>
+                            <td style={{ padding: '1rem', fontSize: '0.875rem', fontWeight: 600 }}>
+                              {isPaid ? (
+                                <span style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}>— Paid</span>
+                              ) : (
+                                <span style={{ color: 'var(--warning)' }}>{formatCurrency(inv.due_amount, inv.currency)}</span>
                               )}
-                              <button
-                                onClick={() => handleDeleteInvoice(inv.id)}
-                                className="btn btn-danger btn-sm btn-icon"
-                                title="Delete Invoice"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td style={{ padding: '1rem', fontSize: '0.8125rem', color: isOverdue ? 'var(--danger)' : 'var(--text-secondary)', fontWeight: isOverdue ? 600 : 400 }}>
+                              {formatDate(inv.due_date)}
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              {getStatusBadge(inv.status)}
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+                                <Link
+                                  href={`/invoices/${inv.id}`}
+                                  className="btn btn-ghost btn-sm btn-icon"
+                                  title="View Details"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  <Eye size={16} />
+                                </Link>
+                                {!isPaid && inv.status !== 'cancelled' && inv.status !== 'void' ? (
+                                  <button
+                                    onClick={() => openPaymentDrawer(inv)}
+                                    className="btn btn-primary btn-sm"
+                                    style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', borderRadius: 'var(--radius-md)', fontWeight: 600 }}
+                                  >
+                                    Record
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn btn-ghost btn-sm btn-icon"
+                                    title="Download Invoice"
+                                    style={{ color: 'var(--text-muted)' }}
+                                  >
+                                    <Download size={16} />
+                                  </button>
+                                )}
+                                <button
+                                  className="btn btn-ghost btn-sm btn-icon"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -615,6 +641,59 @@ export default function InvoicesDashboard() {
               })}
             </div>
           )}
+
+          {/* Bottom Stats Footer */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--surface)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flex: 1, minWidth: '180px' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--danger-subtle)', color: 'var(--danger)', display: 'flex' }}>
+                <Calendar size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{allInvoices.filter(i => i.status === 'overdue' || (i.due_amount > 0 && new Date(i.due_date) < new Date())).length}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Overdue Invoices</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--surface)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flex: 1, minWidth: '180px' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--warning-subtle)', color: 'var(--warning)', display: 'flex' }}>
+                <Clock size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{allInvoices.filter(i => i.due_amount > 0 && new Date(i.due_date) > new Date() && new Date(i.due_date).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000).length}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Due This Week</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--surface)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flex: 1, minWidth: '180px' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)', display: 'flex' }}>
+                <Receipt size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{allInvoices.length}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Total Invoices</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--surface)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flex: 1, minWidth: '180px' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--danger-subtle)', color: 'var(--danger)', display: 'flex' }}>
+                <FileText size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(totalOutstanding)}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Total Outstanding</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--surface)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flex: 1, minWidth: '180px' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '50%', backgroundColor: 'var(--success-subtle)', color: 'var(--success)', display: 'flex' }}>
+                <TrendingUp size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(totalCollected)}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Collected This Month</div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

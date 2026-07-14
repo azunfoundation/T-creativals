@@ -18,7 +18,7 @@ import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 const AI_HOWTO = {
-  overview: 'Antigravity AI is the built-in assistant. You chat with it in plain English and it can answer questions about your company data — leads, tasks, invoices, projects — and take actions for you, like creating a task or drafting a record. You can also attach files for analysis or talk to it live with AI Voice Call.',
+  overview: 'AZUN AI is the built-in assistant. You chat with it in plain English and it can answer questions about your company data — leads, tasks, invoices, projects — and take actions for you, like creating a task or drafting a record. You can also attach files for analysis or talk to it live with AI Voice Call.',
   sections: [
     {
       heading: 'Getting started',
@@ -245,6 +245,20 @@ export default function AiPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [inputText, setInputText] = useState('');
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const handleStartVoiceCall = async () => {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        // Pre-request microphone permission in the user-gesture context so the
+        // voice modal doesn't open on a page that will immediately deny access.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch {
+        // Permission denied or device unavailable — the modal will handle the
+        // detailed error state and guide the user to fix it.
+      }
+    }
+    setIsVoiceOpen(true);
+  };
   const [isDragging, setIsDragging] = useState(false);
   const [optimisticMsg, setOptimisticMsg] = useState<string | null>(null);
   
@@ -398,7 +412,6 @@ export default function AiPage() {
           url: res.data.url,
         }]);
       } catch (err) {
-        console.error("Upload failed", err);
         showToast(getApiErrorMessage(err, 'Failed to upload file.'), 'error');
       }
     }
@@ -738,8 +751,8 @@ export default function AiPage() {
               <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                 {activeConversation?.title === 'New Chat' && (activeConversation?.messages?.length ?? 0) > 0
                   ? activeConversation.messages?.[0]?.content?.slice(0, 52) ?? 'New Chat'
-                  : (activeConversation?.title ?? 'Antigravity AI')}
-                <HelpIcon title="Antigravity AI Assistant" content={{
+                  : (activeConversation?.title ?? 'AZUN AI')}
+                <HelpIcon title="AZUN AI Assistant" content={{
                   what: 'A chat assistant that can read your company data (leads, tasks, invoices, projects), analyze files you attach, and take actions you ask for.',
                   why: 'It saves you digging through pages — ask "What\'s the revenue this month?" or "Create a follow-up task" and it does the legwork.',
                   when: 'Any time you need a quick answer or a routine action. It asks you to confirm before executing anything sensitive.',
@@ -787,7 +800,7 @@ export default function AiPage() {
                 <Sliders size={14} /> Manage Automations
               </Link>
               <button
-                onClick={() => setIsVoiceOpen(true)}
+                onClick={handleStartVoiceCall}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.5rem',
                   padding: '0.4rem 0.875rem',
@@ -815,7 +828,7 @@ export default function AiPage() {
                 <Sparkles size={30} color="#fff" />
               </div>
               <div>
-                <h2 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Welcome to Antigravity AI</h2>
+                <h2 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Welcome to AZUN AI</h2>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', maxWidth: 380, lineHeight: 1.6 }}>Your executive assistant — analyze reports, manage leads, create tasks, invoices and more.</p>
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -1054,7 +1067,7 @@ export default function AiPage() {
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Message Antigravity or drop documents here…"
+                placeholder="Message AZUN or drop documents here…"
                 value={inputText}
                 onChange={handleTextareaChange}
                 onKeyDown={(e) => {

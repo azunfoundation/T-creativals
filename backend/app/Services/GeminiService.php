@@ -36,6 +36,15 @@ class GeminiService
         'anthropic/claude-3.5-sonnet',
     ];
 
+    /**
+     * Fallback chain for OpenAI models.
+     */
+    protected array $openAiModelFallbackChain = [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'gpt-3.5-turbo',
+    ];
+
     public function __construct()
     {
         $this->apiKey = config('services.gemini.key');
@@ -44,7 +53,7 @@ class GeminiService
 
         // Prevent making real external network requests during automated tests
         if (app()->environment('testing')) {
-            if ($this->apiKey !== 'fake-api-key') {
+            if ($this->apiKey !== 'fake-api-key' && !Str::startsWith((string) $this->apiKey, 'sk-')) {
                 $this->apiKey = null;
             }
         }
@@ -65,7 +74,7 @@ class GeminiService
     /**
      * Send messages to Gemini, handling text, files, and function calling.
      */
-    public function chat(array $history, array $attachments = [], bool $isConfirmed = false): array
+    public function chat(array $history, array $attachments = [], bool $isConfirmed = false, array $options = []): array
     {
         if (!$this->enabled) {
             return [
@@ -76,36 +85,48 @@ class GeminiService
 
         // Mock fallback if API key is not configured
         if (empty($this->apiKey) || $this->apiKey === 'null') {
-            return $this->getMockResponse($history);
+            return $this->getMockResponse($history, !empty($options['voice']));
         }
 
         if (Str::startsWith((string) $this->apiKey, 'sk-or-')) {
-            return $this->chatOpenRouter($history, $attachments, $isConfirmed);
+            return $this->chatOpenRouter($history, $attachments, $isConfirmed, $options);
+        }
+
+        if (Str::startsWith((string) $this->apiKey, 'sk-') && !Str::startsWith((string) $this->apiKey, 'sk-or-')) {
+            return $this->chatOpenAi($history, $attachments, $isConfirmed, $options);
         }
 
         // Build the conversation contents
         $contents = $this->buildContents($history, $attachments);
         $tools    = $this->getToolsDeclaration();
 
+        $voiceMode = !empty($options['voice']);
+        $generationConfig = $this->buildGenerationConfig($options);
+
         // Try each model in the fallback chain
         $modelsToTry = array_unique(array_merge([$this->model], $this->modelFallbackChain));
 
         foreach ($modelsToTry as $modelName) {
             try {
+                $payload = [
+                    'contents' => $contents,
+                    'systemInstruction' => [
+                        'parts' => [['text' => $this->getSystemInstruction($voiceMode)]],
+                    ],
+                    'tools' => [
+                        ['functionDeclarations' => $tools],
+                    ],
+                ];
+                if (!empty($generationConfig)) {
+                    $payload['generationConfig'] = $generationConfig;
+                }
+
                 $response = Http::withHeaders([
                     'Content-Type' => 'application/json',
                 ])->withOptions([
                     'force_ip_resolve' => 'v4',
                     'verify'           => false,
-                ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key={$this->apiKey}", [
-                    'contents' => $contents,
-                    'systemInstruction' => [
-                        'parts' => [['text' => $this->getSystemInstruction()]],
-                    ],
-                    'tools' => [
-                        ['functionDeclarations' => $tools],
-                    ],
-                ]);
+                ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key={$this->apiKey}", $payload);
 
                 if ($response->successful()) {
                     $result    = $response->json();
@@ -124,7 +145,7 @@ class GeminiService
                         return ['role' => 'assistant', 'content' => $textResponse];
                     }
 
-                    return $this->handleToolCalls($toolCalls, $history, $attachments, $isConfirmed);
+                    return $this->handleToolCalls($toolCalls, $history, $attachments, $isConfirmed, $options);
                 }
 
                 // Inspect error code to decide whether to fall through
@@ -208,6 +229,40 @@ class GeminiService
                     \Illuminate\Support\Facades\Log::error('GeminiService chatWithoutTools OpenRouter exception', ['model' => $modelName, 'exception' => $e->getMessage()]);
                 }
             }
+        } elseif (Str::startsWith((string) $this->apiKey, 'sk-') && !Str::startsWith((string) $this->apiKey, 'sk-or-')) {
+            $model = $this->model;
+            if (!Str::startsWith($model, 'gpt-')) {
+                $model = 'gpt-4o-mini';
+            }
+
+            $modelsToTry = array_unique(array_merge([$model], $this->openAiModelFallbackChain));
+            $messages = $this->buildOpenRouterMessages($history, []);
+
+            foreach ($modelsToTry as $modelName) {
+                try {
+                    $response = \Illuminate\Support\Facades\Http::withHeaders([
+                        'Content-Type' => 'application/json',
+                        'Authorization' => "Bearer {$this->apiKey}",
+                    ])->withOptions([
+                        'force_ip_resolve' => 'v4',
+                        'verify'           => false,
+                    ])->post("https://api.openai.com/v1/chat/completions", [
+                        'model' => $modelName,
+                        'messages' => $messages,
+                        'max_tokens' => 350,
+                    ]);
+
+                    if ($response->successful()) {
+                        $result = $response->json();
+                        $choice = $result['choices'][0] ?? [];
+                        $message = $choice['message'] ?? [];
+                        $textResponse = $message['content'] ?? '';
+                        return ['role' => 'assistant', 'content' => $textResponse];
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error('GeminiService chatWithoutTools OpenAI exception', ['model' => $modelName, 'exception' => $e->getMessage()]);
+                }
+            }
         } else {
             $contents = $this->buildContents($history, []);
             $modelsToTry = array_unique(array_merge([$this->model], $this->modelFallbackChain));
@@ -264,9 +319,22 @@ class GeminiService
     }
 
     /**
+     * Build a Gemini generationConfig from caller options (e.g. voice mode
+     * caps output length so replies generate — and are spoken — faster).
+     */
+    protected function buildGenerationConfig(array $options): array
+    {
+        $config = [];
+        if (!empty($options['maxOutputTokens'])) {
+            $config['maxOutputTokens'] = (int) $options['maxOutputTokens'];
+        }
+        return $config;
+    }
+
+    /**
      * Process tool calls and re-feed the results back to Gemini.
      */
-    protected function handleToolCalls(array $toolCalls, array $history, array $attachments, bool $isConfirmed): array
+    protected function handleToolCalls(array $toolCalls, array $history, array $attachments, bool $isConfirmed, array $options = []): array
     {
         $toolResults = [];
 
@@ -318,24 +386,32 @@ class GeminiService
             'parts' => $toolResults
         ];
 
+        $voiceMode = !empty($options['voice']);
+        $generationConfig = $this->buildGenerationConfig($options);
+
         $modelsToTry = array_unique(array_merge([$this->model], $this->modelFallbackChain));
 
         foreach ($modelsToTry as $modelName) {
             try {
+                $payload = [
+                    'contents' => $contents,
+                    'systemInstruction' => [
+                        'parts' => [['text' => $this->getSystemInstruction($voiceMode)]],
+                    ],
+                    'tools' => [
+                        ['functionDeclarations' => $this->getToolsDeclaration()],
+                    ],
+                ];
+                if (!empty($generationConfig)) {
+                    $payload['generationConfig'] = $generationConfig;
+                }
+
                 $response = Http::withHeaders([
                     'Content-Type' => 'application/json',
                 ])->withOptions([
                     'force_ip_resolve' => 'v4',
                     'verify'           => false,
-                ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key={$this->apiKey}", [
-                    'contents' => $contents,
-                    'systemInstruction' => [
-                        'parts' => [['text' => $this->getSystemInstruction()]],
-                    ],
-                    'tools' => [
-                        ['functionDeclarations' => $this->getToolsDeclaration()],
-                    ],
-                ]);
+                ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key={$this->apiKey}", $payload);
 
                 if ($response->successful()) {
                     $candidate = $response->json()['candidates'][0] ?? [];
@@ -516,10 +592,32 @@ class GeminiService
     {
         $contents = [];
         $lastIndex = count($history) - 1;
+        $prevRole = null;
 
         foreach ($history as $index => $msg) {
             $role = ($msg['role'] === 'user') ? 'user' : 'model';
-            $parts = [['text' => $msg['content']]];
+            $text = $msg['content'] ?? '';
+
+            // Handle non-alternating role merging
+            if ($role === $prevRole && count($contents) > 0) {
+                $lastIdx = count($contents) - 1;
+                // Merge text parts
+                if (isset($contents[$lastIdx]['parts'][0]['text'])) {
+                    $contents[$lastIdx]['parts'][0]['text'] .= "\n\n" . $text;
+                } else {
+                    $contents[$lastIdx]['parts'][] = ['text' => $text];
+                }
+
+                // If it is the last user message, we must also attach files
+                if ($role === 'user' && !empty($attachments) && $index === $lastIndex) {
+                    foreach ($attachments as $file) {
+                        $contents[$lastIdx]['parts'][] = $this->parseFileForGemini($file);
+                    }
+                }
+                continue;
+            }
+
+            $parts = [['text' => $text]];
 
             // Attach files to the last user message if they match
             if ($role === 'user' && !empty($attachments) && $index === $lastIndex) {
@@ -532,6 +630,7 @@ class GeminiService
                 'role' => $role,
                 'parts' => $parts
             ];
+            $prevRole = $role;
         }
 
         return $contents;
@@ -655,12 +754,12 @@ class GeminiService
     /**
      * Master instruction detailing capabilities and actions.
      */
-    protected function getSystemInstruction(): string
+    protected function getSystemInstruction(bool $voiceMode = false): string
     {
         $role = auth()->user() ? auth()->user()->roles[0]->display_name ?? 'User' : 'User';
         $name = auth()->user() ? auth()->user()->name : 'User';
 
-        return "You are Antigravity, the central Executive AI assistant and Operations Manager inside Creativals OS.\n" .
+        $base = "You are AZUN, the central Executive AI assistant and Operations Manager inside Creativals OS.\n" .
                "You are chatting with a logged-in user named {$name} who holds the role: '{$role}'.\n" .
                "You can call tools to access database details (leads, tasks, clients, projects, invoices, quotes, payroll, settings, reports).\n" .
                "CRITICAL RULES:\n" .
@@ -668,6 +767,19 @@ class GeminiService
                "2. DO NOT perform sensitive actions directly unless confirmed. If a tool is sensitive (e.g. approve_payroll_run, delete, send_invoice), tell the user you will execute it upon confirmation. (The system will intercept and show a confirmation button automatically).\n" .
                "3. Provide rich formatting including markdown, lists, tables, and charts (use bar charts or line charts where appropriate for numerical financial reports).\n" .
                "4. Answer strategic planning questions like a senior CEO advisor, backing your answers with platform reports data (use get_report).";
+
+        if ($voiceMode) {
+            // Voice replies are read aloud, so they must be short and free of
+            // markup. This also cuts generation and text-to-speech latency.
+            $base .= "\n\nVOICE MODE — STRICT RULES:\n" .
+                     "- Answer ONLY the exact question asked, in ONE or at most TWO short sentences.\n" .
+                     "- Do NOT introduce yourself, do NOT describe your capabilities, and do NOT volunteer extra background, tips, or follow-up suggestions unless the user explicitly asks.\n" .
+                     "- Get straight to the answer. Stop speaking the moment the question is answered — no closing remarks or filler.\n" .
+                     "- Never use markdown, tables, bullet lists, code, emojis, or symbols; write plain spoken words.\n" .
+                     "- If the full answer is long, give only the single most important number or takeaway and say the details are in the chat.";
+        }
+
+        return $base;
     }
 
     /**
@@ -886,9 +998,19 @@ class GeminiService
     /**
      * Natural dialogue simulator for keyless / mock settings.
      */
-    protected function getMockResponse(array $history): array
+    protected function getMockResponse(array $history, bool $voiceMode = false): array
     {
         $lastMessage = end($history)['content'] ?? '';
+
+        // In voice mode the reply is read aloud, so a long simulated essay would
+        // sound like rambling. Return a single short spoken sentence instead.
+        if ($voiceMode) {
+            return [
+                'role' => 'assistant',
+                'content' => "I'm in simulation mode right now because no AI key is configured, so I can't pull live data. Ask your administrator to set the AI key to enable full answers.",
+            ];
+        }
+
         $text = "I am operating in fallback simulator mode because no active `GEMINI_API_KEY` was found in the environment configurations.\n\n";
 
         if (preg_match('/(revenue|profit|invoice|money|financial)/i', $lastMessage)) {
@@ -925,16 +1047,19 @@ class GeminiService
     /**
      * Send messages to OpenRouter models (including DeepSeek).
      */
-    public function chatOpenRouter(array $history, array $attachments = [], bool $isConfirmed = false): array
+    public function chatOpenRouter(array $history, array $attachments = [], bool $isConfirmed = false, array $options = []): array
     {
         $model = $this->model;
         if ($model === 'gemini-2.5-flash' || $model === 'gemini-2.0-flash') {
             $model = 'google/' . $model;
         }
 
+        $voiceMode = !empty($options['voice']);
+        $maxTokens = !empty($options['maxOutputTokens']) ? (int) $options['maxOutputTokens'] : 350;
+
         $modelsToTry = array_unique(array_merge([$model], $this->openRouterModelFallbackChain));
-        
-        $messages = $this->buildOpenRouterMessages($history, $attachments);
+
+        $messages = $this->buildOpenRouterMessages($history, $attachments, $voiceMode);
         $tools = $this->getOpenRouterToolsDeclaration();
 
         foreach ($modelsToTry as $modelName) {
@@ -951,7 +1076,7 @@ class GeminiService
                     'model' => $modelName,
                     'messages' => $messages,
                     'tools' => empty($tools) ? null : $tools,
-                    'max_tokens' => 350,
+                    'max_tokens' => $maxTokens,
                 ]);
 
                 if ($response->successful()) {
@@ -965,7 +1090,7 @@ class GeminiService
                         return ['role' => 'assistant', 'content' => $textResponse];
                     }
 
-                    return $this->handleOpenRouterToolCalls($toolCallsRaw, $history, $attachments, $isConfirmed, $modelName);
+                    return $this->handleOpenRouterToolCalls($toolCallsRaw, $history, $attachments, $isConfirmed, $modelName, $options);
                 }
 
                 $errorBody = $response->json();
@@ -995,8 +1120,9 @@ class GeminiService
     /**
      * Process tool calls and re-feed results back to OpenRouter.
      */
-    protected function handleOpenRouterToolCalls(array $toolCallsRaw, array $history, array $attachments, bool $isConfirmed, string $modelName): array
+    protected function handleOpenRouterToolCalls(array $toolCallsRaw, array $history, array $attachments, bool $isConfirmed, string $modelName, array $options = []): array
     {
+        $voiceMode = !empty($options['voice']);
         $toolResults = [];
 
         foreach ($toolCallsRaw as $call) {
@@ -1034,7 +1160,7 @@ class GeminiService
         }
 
         // Send the tool results back to OpenRouter to generate the final dialogue
-        $messages = $this->buildOpenRouterMessages($history, $attachments);
+        $messages = $this->buildOpenRouterMessages($history, $attachments, $voiceMode);
 
         // Append the assistant's tool call response
         $messages[] = [
@@ -1083,6 +1209,27 @@ class GeminiService
     }
 
     /**
+     * Recursively lowercase all 'type' fields in a schema.
+     */
+    protected function lowercaseTypesRecursive(array $schema): array
+    {
+        if (isset($schema['type'])) {
+            $schema['type'] = strtolower((string) $schema['type']);
+        }
+        if (isset($schema['properties']) && is_array($schema['properties'])) {
+            foreach ($schema['properties'] as $key => $prop) {
+                if (is_array($prop)) {
+                    $schema['properties'][$key] = $this->lowercaseTypesRecursive($prop);
+                }
+            }
+        }
+        if (isset($schema['items']) && is_array($schema['items'])) {
+            $schema['items'] = $this->lowercaseTypesRecursive($schema['items']);
+        }
+        return $schema;
+    }
+
+    /**
      * Map tools to OpenAI format.
      */
     protected function getOpenRouterToolsDeclaration(): array
@@ -1092,9 +1239,7 @@ class GeminiService
         
         foreach ($geminiTools as $tool) {
             $parameters = $tool['parameters'] ?? [];
-            if (isset($parameters['type'])) {
-                $parameters['type'] = strtolower($parameters['type']);
-            }
+            $parameters = $this->lowercaseTypesRecursive($parameters);
             
             $openRouterTools[] = [
                 'type' => 'function',
@@ -1112,13 +1257,13 @@ class GeminiService
     /**
      * Format messages for OpenRouter.
      */
-    protected function buildOpenRouterMessages(array $history, array $attachments): array
+    protected function buildOpenRouterMessages(array $history, array $attachments, bool $voiceMode = false): array
     {
         $messages = [];
-        
+
         $messages[] = [
             'role' => 'system',
-            'content' => $this->getSystemInstruction(),
+            'content' => $this->getSystemInstruction($voiceMode),
         ];
 
         $lastIndex = count($history) - 1;
@@ -1227,8 +1372,168 @@ class GeminiService
             $text .= implode(' ', $strings[1]) . "\n";
         }
         
-        $text = str_replace(['\\(', '\\)', '\\\\'], ['(', ')', '\\'], $text);
+        $text = str_replace(['\(', '\)', '\\\\'], ['(', ')', '\\'], $text);
         
         return $text ?: '[No extractable text found in PDF]';
+    }
+
+    /**
+     * Send messages to OpenAI models.
+     */
+    public function chatOpenAi(array $history, array $attachments = [], bool $isConfirmed = false, array $options = []): array
+    {
+        $model = $this->model;
+        if (!Str::startsWith($model, 'gpt-')) {
+            $model = 'gpt-4o-mini';
+        }
+
+        $voiceMode = !empty($options['voice']);
+        $maxTokens = !empty($options['maxOutputTokens']) ? (int) $options['maxOutputTokens'] : 350;
+
+        $modelsToTry = array_unique(array_merge([$model], $this->openAiModelFallbackChain));
+
+        $messages = $this->buildOpenRouterMessages($history, $attachments, $voiceMode);
+        $tools = $this->getOpenRouterToolsDeclaration();
+
+        foreach ($modelsToTry as $modelName) {
+            try {
+                $response = Http::withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$this->apiKey}",
+                ])->withOptions([
+                    'force_ip_resolve' => 'v4',
+                    'verify'           => false,
+                ])->post("https://api.openai.com/v1/chat/completions", [
+                    'model' => $modelName,
+                    'messages' => $messages,
+                    'tools' => empty($tools) ? null : $tools,
+                    'max_tokens' => $maxTokens,
+                ]);
+
+                if ($response->successful()) {
+                    $result = $response->json();
+                    $choice = $result['choices'][0] ?? [];
+                    $message = $choice['message'] ?? [];
+                    $textResponse = $message['content'] ?? '';
+                    $toolCallsRaw = $message['tool_calls'] ?? [];
+
+                    if (empty($toolCallsRaw)) {
+                        return ['role' => 'assistant', 'content' => $textResponse];
+                    }
+
+                    return $this->handleOpenAiToolCalls($toolCallsRaw, $history, $attachments, $isConfirmed, $modelName, $options);
+                }
+
+                $errorBody = $response->json();
+                $errorCode = $errorBody['error']['code'] ?? $response->status();
+                $errorMsg = $errorBody['error']['message'] ?? 'Unknown OpenAI error';
+
+                Log::error('OpenAI API request failed', ['model' => $modelName, 'error' => $errorMsg]);
+                
+                if ($response->status() === 429) {
+                    continue; // Quota/rate limit — try next model
+                }
+
+                return ['role' => 'assistant', 'content' => "⚠️ **OpenAI API Error**\n\nI encountered an error (`{$errorCode}`): `{$errorMsg}`"];
+
+            } catch (\Throwable $e) {
+                Log::error('GeminiService OpenAI exception', ['model' => $modelName, 'exception' => $e->getMessage()]);
+                continue;
+            }
+        }
+
+        return [
+            'role'    => 'assistant',
+            'content' => "⚠️ **API limits reached**\n\nAll configured OpenAI models returned an error or rate limit. Please verify your OpenAI key balance and status.",
+        ];
+    }
+
+    /**
+     * Process tool calls and re-feed results back to OpenAI.
+     */
+    protected function handleOpenAiToolCalls(array $toolCallsRaw, array $history, array $attachments, bool $isConfirmed, string $modelName, array $options = []): array
+    {
+        $voiceMode = !empty($options['voice']);
+        $toolResults = [];
+
+        foreach ($toolCallsRaw as $call) {
+            $name = $call['function']['name'];
+            $args = [];
+            if (isset($call['function']['arguments'])) {
+                $args = json_decode($call['function']['arguments'], true) ?: [];
+            }
+
+            // Check if action is sensitive and needs confirmation
+            if ($this->isSensitiveAction($name) && !$isConfirmed) {
+                return [
+                    'role' => 'assistant',
+                    'content' => "This action requires your confirmation.",
+                    'action_confirmation' => [
+                        'action' => $name,
+                        'params' => $args,
+                        'message' => $this->getSensitiveActionDescription($name, $args),
+                    ]
+                ];
+            }
+
+            // Execute internal API request
+            $execResult = $this->executeInternalRequest($name, $args);
+
+            // Log AI action
+            $this->logAiAction($name, $args, $execResult);
+
+            $toolResults[] = [
+                'role' => 'tool',
+                'tool_call_id' => $call['id'],
+                'name' => $name,
+                'content' => json_encode($execResult),
+            ];
+        }
+
+        // Send the tool results back to OpenAI to generate the final dialogue
+        $messages = $this->buildOpenRouterMessages($history, $attachments, $voiceMode);
+
+        // Append the assistant's tool call response
+        $messages[] = [
+            'role' => 'assistant',
+            'tool_calls' => $toolCallsRaw
+        ];
+
+        // Append the tool response parts
+        foreach ($toolResults as $res) {
+            $messages[] = $res;
+        }
+
+        // Try the same model first, then fallbacks
+        $modelsToTry = array_unique(array_merge([$modelName], $this->openAiModelFallbackChain));
+
+        foreach ($modelsToTry as $mName) {
+            try {
+                $response = Http::withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$this->apiKey}",
+                ])->withOptions([
+                    'force_ip_resolve' => 'v4',
+                    'verify'           => false,
+                ])->post("https://api.openai.com/v1/chat/completions", [
+                    'model' => $mName,
+                    'messages' => $messages,
+                ]);
+
+                if ($response->successful()) {
+                    $choice = $response->json()['choices'][0] ?? [];
+                    $text = $choice['message']['content'] ?? '';
+                    return ['role' => 'assistant', 'content' => $text];
+                }
+            } catch (\Throwable $e) {
+                Log::error('OpenAI tool-loop failed', ['model' => $mName, 'error' => $e->getMessage()]);
+                continue;
+            }
+        }
+
+        return [
+            'role' => 'assistant',
+            'content' => 'I successfully completed the requested operation, but had trouble rendering a final response summary via OpenAI.',
+        ];
     }
 }

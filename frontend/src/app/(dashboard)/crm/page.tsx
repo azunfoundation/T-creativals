@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react'; 
-import { SkeletonTable } from '@/components/ui/Skeleton'; 
-import { EmptyState } from '@/components/ui/EmptyState'; 
+import { useState, useEffect } from 'react';
 import { useModal } from '@/providers/ModalProvider';
+import { useToast } from '@/hooks/useToast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  Plus, Search, LayoutGrid, List, Filter, X, 
-  MapPin, Calendar, DollarSign, UserCheck, Flame, 
-  ArrowUpDown, ExternalLink, Globe, Check, Eye, Trash2
+import {
+  Plus, Search, LayoutGrid, List, X, RotateCcw, Tag,
+  UserPlus, Flame, Trophy, XCircle, TrendingUp,
+  ArrowUpRight, ArrowDownRight, ArrowUpDown,
+  Globe, Eye, Trash2,
+  Users, Briefcase, IndianRupee, BarChart3, Upload, Layers,
+  Phone, MessageCircle, Mail, StickyNote, CalendarClock,
+  ArrowRightCircle, UserCheck, Sparkles, CheckCircle2, Lightbulb
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -82,13 +85,74 @@ const TIMEZONES = [
   'Asia/Dubai'
 ];
 
+const STAGE_DESCRIPTIONS: Record<string, string> = {
+  'fresh-lead': 'Newly added leads',
+  'new': 'Newly added leads',
+  'warm-lead': 'Contacted & interested',
+  'hot-lead': 'Proposal / negotiation',
+  'quote-sent': 'Quote shared',
+  'invoice-sent': 'Payment pending',
+  'won': 'Converted',
+  'lost': 'Not converted',
+  'future-interest': 'Revisit later',
+};
+
+const SERVICE_TAG_CLASSES = ['badge-success', 'badge-warning', 'badge-info', 'badge-accent', 'badge-danger'];
+
+const ACTIVITY_ICONS: Record<string, { icon: React.ComponentType<any>; color: string; bg: string }> = {
+  call: { icon: Phone, color: 'var(--info)', bg: 'var(--info-subtle)' },
+  whatsapp: { icon: MessageCircle, color: 'var(--success)', bg: 'var(--success-subtle)' },
+  email: { icon: Mail, color: 'var(--info)', bg: 'var(--info-subtle)' },
+  note: { icon: StickyNote, color: 'var(--warning)', bg: 'var(--warning-subtle)' },
+  meeting: { icon: CalendarClock, color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+  stage_change: { icon: ArrowRightCircle, color: 'var(--warning)', bg: 'var(--warning-subtle)' },
+  assignment_change: { icon: UserCheck, color: 'var(--info)', bg: 'var(--info-subtle)' },
+  system_event: { icon: Sparkles, color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+  lead_converted: { icon: Trophy, color: 'var(--success)', bg: 'var(--success-subtle)' },
+};
+
+const DAY_MS = 86_400_000;
+
 // ============================================================
-// Helper: safely get budget from lead (handles both field names)
+// Helpers
 // ============================================================
+
 function getLeadBudget(lead: Lead): number {
   const raw = (lead as any).estimated_monthly_budget ?? (lead as any).budget ?? 0;
   const num = Number(raw);
   return isNaN(num) ? 0 : num;
+}
+
+function budgetRangeLabel(value: number): string {
+  if (value <= 0) return 'Budget TBD';
+  if (value < 50_000) return '₹0 - ₹50K';
+  if (value < 100_000) return '₹50K - ₹1L';
+  if (value < 500_000) return '₹1L - ₹5L';
+  if (value < 1_500_000) return '₹5L - ₹15L';
+  return '₹15L+';
+}
+
+/** % change of items dated in the last 7 days vs the 7 days before. Null when both windows are empty. */
+function pctChangeOverWeek(dates: (string | undefined)[]): number | null {
+  const now = Date.now();
+  let last = 0;
+  let prev = 0;
+  dates.forEach((s) => {
+    if (!s) return;
+    const t = new Date(s).getTime();
+    if (isNaN(t)) return;
+    if (t >= now - 7 * DAY_MS) last++;
+    else if (t >= now - 14 * DAY_MS) prev++;
+  });
+  if (last === 0 && prev === 0) return null;
+  if (prev === 0) return 100;
+  return Math.round(((last - prev) / prev) * 100);
+}
+
+function formatDateTime(s: string): string {
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return '';
+  return `${formatDate(d)}, ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 // ============================================================
@@ -96,12 +160,17 @@ function getLeadBudget(lead: Lead): number {
 // ============================================================
 
 export default function LeadsPage() {
-  const { confirm, prompt } = useModal();
+  const { confirm } = useModal();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   // Layout and view states
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createStageId, setCreateStageId] = useState<number | null>(null);
+  const [trendDays, setTrendDays] = useState(7);
+  const [showAllActivities, setShowAllActivities] = useState(false);
+  const [showAllReminders, setShowAllReminders] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -205,7 +274,7 @@ export default function LeadsPage() {
   // ============================================================
 
   const updateStageMutation = useMutation({
-    mutationFn: ({ leadId, stageId }: { leadId: number; stageId: number }) => 
+    mutationFn: ({ leadId, stageId }: { leadId: number; stageId: number }) =>
       leadsApi.updateStage(leadId, stageId, 'Stage updated via Kanban Drag & Drop'),
     onMutate: async ({ leadId, stageId }) => {
       await queryClient.cancelQueries({ queryKey: ['leads'] });
@@ -246,6 +315,21 @@ export default function LeadsPage() {
   // ============================================================
   // Handlers and Filtering
   // ============================================================
+
+  const openCreateModal = (stageId?: number) => {
+    setCreateStageId(stageId ?? null);
+    setShowCreateModal(true);
+  };
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setStageFilter('');
+    setSourceFilter('');
+    setExecFilter('');
+    setPriorityFilter('');
+    setTempFilter('');
+    setBudgetRangeFilter('');
+  };
 
   const handleDragStart = (leadId: number) => {
     setDraggedLeadId(leadId);
@@ -329,11 +413,11 @@ export default function LeadsPage() {
     if (valB === undefined || valB === null) return -1;
 
     if (typeof valA === 'string' && typeof valB === 'string') {
-      return sortOrder === 'asc' 
-        ? valA.localeCompare(valB) 
+      return sortOrder === 'asc'
+        ? valA.localeCompare(valB)
         : valB.localeCompare(valA);
     }
-    
+
     if (typeof valA === 'number' && typeof valB === 'number') {
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     }
@@ -353,60 +437,142 @@ export default function LeadsPage() {
     return stageObj?.slug ?? '';
   };
 
-  const newCount = leads.filter((l) => {
+  const freshLeads = leads.filter((l) => {
     const slug = getLeadStageSlug(l);
     return slug === 'fresh-lead' || slug === 'new';
-  }).length;
-  const warmCount = leads.filter((l) => l.temperature === 'warm').length;
-  const hotCount = leads.filter((l) => l.temperature === 'hot').length;
-  const wonCount = leads.filter((l) => getLeadStageSlug(l) === 'won').length;
-  const lostCount = leads.filter((l) => getLeadStageSlug(l) === 'lost').length;
+  });
+  const warmLeads = leads.filter((l) => l.temperature === 'warm');
+  const hotLeads = leads.filter((l) => l.temperature === 'hot');
+  const wonLeads = leads.filter((l) => getLeadStageSlug(l) === 'won');
+  const lostLeads = leads.filter((l) => getLeadStageSlug(l) === 'lost');
+
+  const newCount = freshLeads.length;
+  const warmCount = warmLeads.length;
+  const hotCount = hotLeads.length;
+  const wonCount = wonLeads.length;
+  const lostCount = lostLeads.length;
   const conversionRate = totalLeads > 0 ? Math.round((wonCount / totalLeads) * 100) : 0;
-  const wonBudgets = leads
-    .filter((l) => getLeadStageSlug(l) === 'won')
+  const wonBudgetTotal = wonLeads.reduce((sum, l) => sum + getLeadBudget(l), 0);
+  const avgDealValue = wonCount > 0 ? Math.round(wonBudgetTotal / wonCount) : 0;
+
+  // Week-over-week trends (created/closed in last 7 days vs the 7 days before)
+  const newTrend = pctChangeOverWeek(leads.map((l) => l.created_at));
+  const warmTrend = pctChangeOverWeek(warmLeads.map((l) => l.created_at));
+  const hotTrend = pctChangeOverWeek(hotLeads.map((l) => l.created_at));
+  const wonTrend = pctChangeOverWeek(wonLeads.map((l) => (l as any).converted_at ?? l.updated_at));
+  const lostTrend = pctChangeOverWeek(lostLeads.map((l) => l.updated_at));
+
+  // ============================================================
+  // Pipeline Insights + Analytics data
+  // ============================================================
+
+  const activeDeals = leads.filter((l) => !['won', 'lost'].includes(getLeadStageSlug(l))).length;
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const wonThisMonth = wonLeads
+    .filter((l) => {
+      const t = new Date((l as any).converted_at ?? l.updated_at).getTime();
+      return !isNaN(t) && t >= monthStart.getTime();
+    })
     .reduce((sum, l) => sum + getLeadBudget(l), 0);
-  const avgValue = wonCount > 0 ? Math.round(wonBudgets / wonCount) : 0;
+
+  // Lead source distribution (all leads)
+  const sourceDistribution = sources
+    .map((src) => ({
+      label: src.name,
+      color: src.color || 'var(--accent)',
+      value: leads.filter((l) => ((l as any).source_id ?? (l as any).lead_source_id) === src.id).length,
+    }))
+    .filter((s) => s.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const distributedTotal = sourceDistribution.reduce((s, x) => s + x.value, 0);
+  if (totalLeads - distributedTotal > 0) {
+    sourceDistribution.push({ label: 'Other', color: 'var(--text-muted)', value: totalLeads - distributedTotal });
+  }
+
+  // Pipeline trend: leads created per day over the selected window
+  const trendSeries: { label: string; value: number }[] = [];
+  for (let i = trendDays - 1; i >= 0; i--) {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - i);
+    const from = day.getTime();
+    const to = from + DAY_MS;
+    const count = leads.filter((l) => {
+      const t = new Date(l.created_at).getTime();
+      return !isNaN(t) && t >= from && t < to;
+    }).length;
+    trendSeries.push({
+      label: day.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+      value: count,
+    });
+  }
+
+  // Recent activities across all leads (list endpoint eager-loads them)
+  const allActivities = leads
+    .flatMap((l) =>
+      (l.activities ?? []).map((a) => ({ ...a, _company: l.company_name, _leadId: l.id }))
+    )
+    .sort((a, b) =>
+      new Date(b.occurred_at ?? b.created_at).getTime() - new Date(a.occurred_at ?? a.created_at).getTime()
+    );
+  const visibleActivities = allActivities.slice(0, showAllActivities ? 12 : 4);
+
+  // Pending follow-ups across all leads, soonest first
+  const pendingFollowups = leads
+    .flatMap((l) =>
+      (l.followups ?? []).filter((f) => !f.is_completed).map((f) => ({ ...f, _company: l.company_name, _leadId: l.id }))
+    )
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+
+  const quoteSentCount = leads.filter((l) => getLeadStageSlug(l) === 'quote-sent').length;
+  const invoiceSentCount = leads.filter((l) => getLeadStageSlug(l) === 'invoice-sent').length;
+
+  const tips: string[] = [
+    hotCount > 0 ? `Follow up with ${hotCount} hot lead${hotCount === 1 ? '' : 's'}` : '',
+    quoteSentCount > 0 ? `${quoteSentCount} quote${quoteSentCount === 1 ? ' is' : 's are'} awaiting response` : '',
+    invoiceSentCount > 0 ? `${invoiceSentCount} invoice${invoiceSentCount === 1 ? ' is' : 's are'} pending payment` : '',
+    pendingFollowups.length > 0 ? `${pendingFollowups.length} follow-up${pendingFollowups.length === 1 ? ' is' : 's are'} scheduled` : '',
+    'Update leads to keep the pipeline accurate',
+  ].filter(Boolean);
 
   return (
     <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-      
+
       {/* ── KPI Panels ── */}
       <div className="kpi-grid kpi-grid-6" style={{ marginBottom: '1.5rem', gap: '0.75rem' }}>
-        <div className="kpi-card">
-          <span className="kpi-label">New Leads</span>
-          <div className="kpi-value">{newCount}</div>
-          <span className="kpi-trend flat">In Pipeline</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Warm Temperature</span>
-          <div className="kpi-value" style={{ color: 'var(--warning)' }}>{warmCount}</div>
-          <span className="kpi-trend flat">Nurturing</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Hot Temperature</span>
-          <div className="kpi-value" style={{ color: 'var(--danger)' }}>{hotCount}</div>
-          <span className="kpi-trend flat">High Priority</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Won Deals</span>
-          <div className="kpi-value" style={{ color: 'var(--success)' }}>{wonCount}</div>
-          <span className="kpi-trend up">+{wonCount} converted</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Lost Leads</span>
-          <div className="kpi-value" style={{ color: 'var(--text-muted)' }}>{lostCount}</div>
-          <span className="kpi-trend down">Inactive</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            Conv. Rate / Avg Value
-            <HelpIcon text="Conversion rate = leads in the Won stage ÷ all leads. Avg value = the average budget of those won leads." />
-          </span>
-          <div className="kpi-value" style={{ fontSize: '1.25rem' }}>
-            {conversionRate}% / <span style={{ color: 'var(--success)', fontSize: '1.125rem' }}>{formatCurrency(avgValue)}</span>
-          </div>
-          <span className="kpi-trend flat">Pipeline Health</span>
-        </div>
+        <StatCard
+          icon={UserPlus} iconBg="var(--info-subtle)" iconColor="var(--info)"
+          label="New Leads" value={newCount} trend={newTrend}
+          help="Leads currently sitting in the first pipeline stage. Trend compares leads created in the last 7 days with the 7 days before."
+        />
+        <StatCard
+          icon={Flame} iconBg="var(--warning-subtle)" iconColor="var(--warning)"
+          label="Warm Temperature" value={warmCount} trend={warmTrend}
+          help="Leads marked warm — interested, but not ready to decide yet."
+        />
+        <StatCard
+          icon={Flame} iconBg="var(--danger-subtle)" iconColor="var(--danger)"
+          label="Hot Temperature" value={hotCount} trend={hotTrend}
+          help="Leads marked hot — close to a decision. These deserve attention first."
+        />
+        <StatCard
+          icon={Trophy} iconBg="var(--success-subtle)" iconColor="var(--success)"
+          label="Won Deals" value={wonCount} valueColor="var(--success)" trend={wonTrend}
+          help="Leads that reached the Won stage."
+        />
+        <StatCard
+          icon={XCircle} iconBg="var(--danger-subtle)" iconColor="var(--danger)"
+          label="Lost Leads" value={lostCount} valueColor="var(--text-muted)" trend={lostTrend} trendIsBad
+          help="Leads that reached the Lost stage. A falling trend is good news here."
+        />
+        <StatCard
+          icon={TrendingUp} iconBg="var(--accent-subtle)" iconColor="var(--accent)"
+          label="Conversion Rate" value={`${conversionRate}%`} subline={`${wonCount} / ${totalLeads}`}
+          help="Won leads ÷ all leads. The line below shows won / total."
+        />
       </div>
 
       {/* ── Action Header ── */}
@@ -422,62 +588,70 @@ export default function LeadsPage() {
             }} />
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '2px' }}>
-            Manage client acquisitions, track deals, and convert proposals.
+            Manage client acquisitions, track deals, and convert prospects.
           </p>
         </div>
-        
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <HowToUseGuide moduleKey="crm" title="How the CRM Works" content={CRM_HOWTO} />
 
+          <Link
+            href="/settings/crm"
+            className="btn btn-sm"
+            style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid transparent' }}
+            title="Manage pipeline stages and lead sources"
+          >
+            <Tag size={14} /> Manage Categories
+          </Link>
+
           {/* View Toggle */}
-          <div style={{ background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', padding: '3px', display: 'flex', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', padding: '3px', display: 'flex', gap: '2px', border: '1px solid var(--border)' }}>
             <button
               onClick={() => setViewMode('kanban')}
-              className="btn btn-sm"
+              title="Kanban view"
               style={{
+                width: 32, height: 28,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                 background: viewMode === 'kanban' ? 'var(--surface)' : 'transparent',
-                color: viewMode === 'kanban' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                padding: '0.375rem 0.625rem',
-                borderRadius: 'var(--radius-sm)'
+                color: viewMode === 'kanban' ? 'var(--accent)' : 'var(--text-secondary)',
+                border: viewMode === 'kanban' ? '1px solid var(--border)' : '1px solid transparent',
               }}
             >
-              <LayoutGrid size={14} style={{ marginRight: '4px' }} />
-              Kanban
+              <LayoutGrid size={15} />
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className="btn btn-sm"
+              title="List view"
               style={{
+                width: 32, height: 28,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                 background: viewMode === 'list' ? 'var(--surface)' : 'transparent',
-                color: viewMode === 'list' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                padding: '0.375rem 0.625rem',
-                borderRadius: 'var(--radius-sm)'
+                color: viewMode === 'list' ? 'var(--accent)' : 'var(--text-secondary)',
+                border: viewMode === 'list' ? '1px solid var(--border)' : '1px solid transparent',
               }}
             >
-              <List size={14} style={{ marginRight: '4px' }} />
-              List View
+              <List size={15} />
             </button>
           </div>
 
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn btn-primary"
-          >
+          <button onClick={() => openCreateModal()} className="btn btn-primary">
             <Plus size={16} /> Add Lead
           </button>
         </div>
       </div>
 
-      {/* ── Advanced Filters Panel ── */}
-      <div className="card-elevated" style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          
+      {/* ── Filters Bar ── */}
+      <div className="card-elevated" style={{ padding: '0.875rem 1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap', alignItems: 'center' }}>
+
           {/* Search Input */}
           <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
             <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder="Search company, contact name..."
+              placeholder="Search company, contact name, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input"
@@ -485,28 +659,23 @@ export default function LeadsPage() {
             />
           </div>
 
-          <Filter size={15} style={{ color: 'var(--text-muted)' }} />
-
-          {/* Stage Filter */}
           <select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
             className="form-input"
-            style={{ width: '130px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+            style={{ width: '125px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
           >
             <option value="">All Stages</option>
             {stages.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
-          <HelpIcon text="Stage = how far the lead is in the sales process. Each Kanban column is one stage." />
 
-          {/* Source Filter */}
           <select
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value)}
             className="form-input"
-            style={{ width: '130px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+            style={{ width: '125px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
           >
             <option value="">All Sources</option>
             {sources.map((s) => (
@@ -514,7 +683,6 @@ export default function LeadsPage() {
             ))}
           </select>
 
-          {/* Executive Filter */}
           <select
             value={execFilter}
             onChange={(e) => setExecFilter(e.target.value)}
@@ -527,7 +695,6 @@ export default function LeadsPage() {
             ))}
           </select>
 
-          {/* Priority Filter */}
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
@@ -541,26 +708,23 @@ export default function LeadsPage() {
             <option value="urgent">Urgent</option>
           </select>
 
-          {/* Temp Filter */}
           <select
             value={tempFilter}
             onChange={(e) => setTempFilter(e.target.value)}
             className="form-input"
-            style={{ width: '120px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+            style={{ width: '110px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
           >
             <option value="">All Temps</option>
             <option value="cold">Cold</option>
             <option value="warm">Warm</option>
             <option value="hot">Hot</option>
           </select>
-          <HelpIcon text="Temperature = how ready the lead is to buy. Cold: just exploring. Warm: interested. Hot: close to a decision." />
 
-          {/* Budget Range Filter */}
           <select
             value={budgetRangeFilter}
             onChange={(e) => setBudgetRangeFilter(e.target.value)}
             className="form-input"
-            style={{ width: '150px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+            style={{ width: '130px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
           >
             <option value="">Any Budget</option>
             <option value="under_1l">Under ₹1,00,000</option>
@@ -569,23 +733,14 @@ export default function LeadsPage() {
             <option value="over_15l">Over ₹15,00,000</option>
           </select>
 
-          {/* Reset button */}
-          {(searchQuery || stageFilter || sourceFilter || execFilter || priorityFilter || tempFilter || budgetRangeFilter) && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setStageFilter('');
-                setSourceFilter('');
-                setExecFilter('');
-                setPriorityFilter('');
-                setTempFilter('');
-                setBudgetRangeFilter('');
-              }}
-              style={{ color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px', padding: '0.5rem' }}
-            >
-              <X size={12} /> Clear
-            </button>
-          )}
+          <button
+            onClick={resetFilters}
+            className="btn btn-sm"
+            style={{ height: '38px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-secondary)' }}
+            title="Clear all filters"
+          >
+            <RotateCcw size={13} /> Reset
+          </button>
 
         </div>
       </div>
@@ -603,123 +758,251 @@ export default function LeadsPage() {
           ))}
         </div>
       ) : viewMode === 'kanban' ? (
-        
+
         // ============================================================
-        // KANBAN VIEW
+        // KANBAN VIEW + INSIGHTS SIDEBAR
         // ============================================================
-        
-        <div style={{ display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '1rem', minHeight: 'calc(100vh - 360px)', alignItems: 'flex-start' }}>
-          {stages.sort((a,b) => a.sort_order - b.sort_order).map((stage) => {
-            // Match using stage_id from the lead (now reliably returned from API)
-            const stageLeads = filteredLeads.filter((l) => {
-              const lid = l.stage_id ?? (l as any)._stageObj?.id;
-              return lid === stage.id;
-            });
-            const isOver = dragOverStageId === stage.id;
-            return (
-              <div
-                key={stage.id}
-                onDragOver={(e) => handleDragOver(e, stage.id)}
-                onDrop={() => handleDrop(stage.id)}
-                onDragLeave={() => setDragOverStageId(null)}
-                style={{
-                  width: '280px',
-                  minWidth: '280px',
-                  background: isOver ? 'var(--surface-hover)' : 'var(--surface)',
-                  border: isOver ? '2px dashed var(--accent)' : '1px solid var(--border)',
-                  borderRadius: 'var(--radius-lg)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  maxHeight: 'calc(100vh - 320px)',
-                  transition: 'background var(--transition-fast), border var(--transition-fast)'
-                }}
-              >
-                {/* Stage Header */}
-                <div style={{ padding: '0.875rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: stage.color, display: 'inline-block' }} />
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{stage.name}</span>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: '9999px', padding: '1px 6px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                    {stageLeads.length}
-                  </span>
-                </div>
 
-                {/* Stage Body */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '0.625rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  {stageLeads.length === 0 ? (
-                    <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      No leads in this stage
-                    </div>
-                  ) : (
-                    stageLeads.map((lead) => {
-                      const contacts = lead.contacts ?? [];
-                      const primaryContact = contacts.find((c: any) => c.is_primary) ?? contacts[0];
-                      let tempColor = 'badge-muted';
-                      if (lead.temperature === 'warm') tempColor = 'badge-warning';
-                      if (lead.temperature === 'hot') tempColor = 'badge-danger';
-                      if (lead.temperature === 'cold') tempColor = 'badge-info';
+        <div className="crm-layout" style={{ marginBottom: '1.25rem' }}>
 
-                      return (
-                        <div
-                          key={lead.id}
-                          draggable
-                          onDragStart={() => handleDragStart(lead.id)}
-                          style={{
-                            background: 'var(--surface-elevated)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 'var(--radius-md)',
-                            padding: '0.875rem',
-                            cursor: 'grab'
-                          }}
-                          onDragEnd={() => setDraggedLeadId(null)}
-                          className="crm-kanban-card"
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.375rem' }}>
-                            <Link href={`/crm/${lead.id}`} style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', textDecoration: 'none' }} className="hover:text-accent flex items-center gap-1">
-                              {lead.company_name}
-                              <ExternalLink size={10} style={{ opacity: 0.5 }} />
-                            </Link>
-                            <span className={`badge ${tempColor}`} style={{ fontSize: '0.625rem', padding: '1px 5px' }}>
-                              {lead.temperature}
-                            </span>
-                          </div>
-
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.625rem' }}>
-                            Contact: {(primaryContact as any)?.name || '—'}
-                          </div>
-
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '0.75rem', alignItems: 'center' }}>
-                            <span className="badge badge-accent" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>{lead.priority}</span>
-                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-                              {formatCurrency(lead._budget)}
-                            </span>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem', marginTop: '0.25rem', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <Calendar size={11} /> {lead.expected_start_date ? formatDate(lead.expected_start_date as string) : 'No date'}
-                            </span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <UserCheck size={11} /> {lead._salesExec?.name?.split(' ')[0] ?? 'Unassigned'}
-                            </span>
-                          </div>
+          {/* Board */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '0.875rem', overflowX: 'auto', paddingBottom: '0.5rem', alignItems: 'flex-start' }}>
+              {[...stages].sort((a, b) => a.sort_order - b.sort_order).map((stage) => {
+                const stageLeads = filteredLeads.filter((l) => {
+                  const lid = l.stage_id ?? (l as any)._stageObj?.id;
+                  return lid === stage.id;
+                });
+                const isOver = dragOverStageId === stage.id;
+                const description = STAGE_DESCRIPTIONS[stage.slug] ?? '';
+                return (
+                  <div
+                    key={stage.id}
+                    onDragOver={(e) => handleDragOver(e, stage.id)}
+                    onDrop={() => handleDrop(stage.id)}
+                    onDragLeave={() => setDragOverStageId(null)}
+                    style={{
+                      width: '272px',
+                      minWidth: '272px',
+                      background: isOver
+                        ? 'var(--surface-hover)'
+                        : stage.color
+                          ? `color-mix(in srgb, ${stage.color} 6%, var(--surface))`
+                          : 'var(--surface)',
+                      border: isOver ? '2px dashed var(--accent)' : '1px solid var(--border)',
+                      borderRadius: 'var(--radius-lg)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      maxHeight: 'calc(100vh - 300px)',
+                      transition: 'background var(--transition-fast), border var(--transition-fast)'
+                    }}
+                  >
+                    {/* Stage Header */}
+                    <div style={{ padding: '0.875rem 1rem 0.625rem', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: stage.color, display: 'inline-block', flexShrink: 0 }} />
+                          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.name}</span>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                        <span style={{ fontSize: '0.6875rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '9999px', padding: '1px 7px', color: 'var(--text-secondary)', fontWeight: 700, flexShrink: 0 }}>
+                          {stageLeads.length}
+                        </span>
+                      </div>
+                      {description && (
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '17px' }}>
+                          {description}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Stage Body */}
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0.625rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                      {stageLeads.length === 0 ? (
+                        <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                          No leads in this stage
+                        </div>
+                      ) : (
+                        stageLeads.map((lead) => {
+                          const contacts = lead.contacts ?? [];
+                          const primaryContact = (contacts.find((c: any) => c.is_primary) ?? contacts[0]) as any;
+                          const firstServiceId = (lead.interested_service_ids ?? [])[0];
+                          const firstService = catalogServices.find((s) => s.id === firstServiceId);
+                          const serviceTagClass = firstService ? SERVICE_TAG_CLASSES[firstService.id % SERVICE_TAG_CLASSES.length] : '';
+                          const exec = (lead as any)._salesExec;
+                          const execFirstName = exec?.name?.split(' ')[0];
+
+                          return (
+                            <div
+                              key={lead.id}
+                              draggable
+                              onDragStart={() => handleDragStart(lead.id)}
+                              onDragEnd={() => setDraggedLeadId(null)}
+                              className="crm-kanban-card"
+                              style={{
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '0.75rem 0.875rem',
+                                cursor: 'grab',
+                                boxShadow: 'var(--shadow-sm)'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                                <Link href={`/crm/${lead.id}`} style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', textDecoration: 'none', lineHeight: 1.3 }} className="hover:text-accent">
+                                  {lead.company_name}
+                                </Link>
+                                {lead.temperature === 'hot' && (
+                                  <span className="badge badge-danger" style={{ fontSize: '0.5625rem', padding: '1px 6px', letterSpacing: '0.05em', flexShrink: 0 }}>
+                                    HOT
+                                  </span>
+                                )}
+                              </div>
+
+                              {primaryContact?.name && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                                  {primaryContact.name}
+                                </div>
+                              )}
+                              {primaryContact?.email && (
+                                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {primaryContact.email}
+                                </div>
+                              )}
+
+                              {firstService && (
+                                <div style={{ marginTop: '0.5rem' }}>
+                                  <span className={`badge ${serviceTagClass}`} style={{ fontSize: '0.5625rem', padding: '2px 6px', letterSpacing: '0.06em', fontWeight: 700 }}>
+                                    {firstService.name.toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '0.5rem', fontVariantNumeric: 'tabular-nums' }}>
+                                {budgetRangeLabel(lead._budget)}
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem', marginTop: '0.5rem', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                                <span>
+                                  {formatDate((lead.expected_start_date as string) || lead.created_at)}
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
+                                  <span style={{
+                                    width: 16, height: 16, borderRadius: '50%',
+                                    background: 'var(--accent-subtle)', color: 'var(--accent)',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '0.5625rem', fontWeight: 700
+                                  }}>
+                                    {(execFirstName?.[0] ?? '?').toUpperCase()}
+                                  </span>
+                                  {execFirstName ?? 'Unassigned'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Column Footer: quick add into this stage */}
+                    <button
+                      onClick={() => openCreateModal(stage.id)}
+                      className="crm-col-add"
+                      style={{
+                        margin: '0.375rem 0.625rem 0.625rem',
+                        padding: '0.4rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px dashed var(--border)',
+                        background: 'transparent',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                    >
+                      <Plus size={13} /> Add Lead
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add New Stage */}
+            <Link
+              href="/settings/crm"
+              className="crm-add-stage"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                padding: '0.625rem', marginTop: '0.5rem',
+                border: '1px dashed var(--border)', borderRadius: 'var(--radius-md)',
+                color: 'var(--text-muted)', fontSize: '0.8125rem', fontWeight: 600,
+                textDecoration: 'none'
+              }}
+            >
+              <Plus size={14} /> Add New Stage
+            </Link>
+          </div>
+
+          {/* Insights Sidebar */}
+          <aside style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
+
+            {/* Pipeline Insights */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '0.625rem' }}>
+                <Layers size={15} style={{ color: 'var(--accent)' }} /> Pipeline Insights
+              </h3>
+              <InsightRow icon={Users} iconBg="var(--info-subtle)" iconColor="var(--info)" label="Total Leads" value={String(totalLeads)} />
+              <InsightRow icon={Briefcase} iconBg="var(--accent-subtle)" iconColor="var(--accent)" label="Active Deals" value={String(activeDeals)} />
+              <InsightRow icon={Trophy} iconBg="var(--success-subtle)" iconColor="var(--success)" label="Won This Month" value={formatCurrency(wonThisMonth)} />
+              <InsightRow icon={IndianRupee} iconBg="var(--warning-subtle)" iconColor="var(--warning)" label="Avg. Deal Value" value={formatCurrency(avgDealValue)} />
+              <Link
+                href="/reports"
+                className="btn btn-sm"
+                style={{ width: '100%', justifyContent: 'center', marginTop: '0.75rem', background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid transparent' }}
+              >
+                <BarChart3 size={14} /> View Full Report
+              </Link>
+            </div>
+
+            {/* Quick Actions */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '0.25rem' }}>
+                <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Quick Actions
+              </h3>
+              <QuickAction
+                icon={UserPlus} iconBg="var(--info-subtle)" iconColor="var(--info)"
+                title="Add New Lead" caption="Create a new lead"
+                onClick={() => openCreateModal()}
+              />
+              <QuickAction
+                icon={Upload} iconBg="var(--success-subtle)" iconColor="var(--success)"
+                title="Import Leads" caption="Upload from CSV / Excel"
+                onClick={() => showToast('CSV / Excel import is coming soon.', 'info')}
+              />
+              <QuickAction
+                icon={Tag} iconBg="var(--accent-subtle)" iconColor="var(--accent)"
+                title="Lead Sources" caption="Manage lead sources"
+                href="/settings/crm"
+              />
+              <QuickAction
+                icon={Users} iconBg="var(--warning-subtle)" iconColor="var(--warning)"
+                title="Sales Executives" caption="Manage sales team"
+                href="/users"
+              />
+            </div>
+          </aside>
         </div>
       ) : (
 
         // ============================================================
         // DATATABLE LIST VIEW
         // ============================================================
-        
-        <div className="data-table-wrap">
+
+        <div className="data-table-wrap" style={{ marginBottom: '1.25rem' }}>
           {sortedLeads.length === 0 ? (
             <div className="empty-state" style={{ padding: '4rem 2rem' }}>
               <p style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>No matching leads found</p>
@@ -828,6 +1111,131 @@ export default function LeadsPage() {
       )}
 
       {/* ============================================================
+          ANALYTICS ROW
+          ============================================================ */}
+      {!isLoading && (
+        <div className="crm-analytics-grid" style={{ marginBottom: '1.5rem' }}>
+
+          {/* Lead Source Distribution */}
+          <AnalyticsCard title="Lead Source Distribution">
+            {sourceDistribution.length === 0 ? (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>No leads yet — add your first lead to see the split by source.</p>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                <DonutChart segments={sourceDistribution} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, minWidth: '140px' }}>
+                  {sourceDistribution.slice(0, 6).map((seg) => (
+                    <div key={seg.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '0.75rem' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', minWidth: 0 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{seg.label}</span>
+                      </span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                        {Math.round((seg.value / totalLeads) * 100)}% ({seg.value})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </AnalyticsCard>
+
+          {/* Pipeline Trend */}
+          <AnalyticsCard
+            title="Pipeline Trend"
+            action={
+              <select
+                value={trendDays}
+                onChange={(e) => setTrendDays(Number(e.target.value))}
+                className="form-input"
+                style={{ width: 'auto', height: '30px', padding: '0 0.5rem', fontSize: '0.75rem' }}
+              >
+                <option value={7}>Last 7 Days</option>
+                <option value={14}>Last 14 Days</option>
+                <option value={30}>Last 30 Days</option>
+              </select>
+            }
+          >
+            <TrendChart series={trendSeries} />
+          </AnalyticsCard>
+
+          {/* Recent Activities */}
+          <AnalyticsCard title="Recent Activities">
+            {visibleActivities.length === 0 ? (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>No activity yet. Calls, notes, and stage changes will show up here.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {visibleActivities.map((a) => {
+                  const meta = ACTIVITY_ICONS[a.type] ?? { icon: Sparkles, color: 'var(--text-muted)', bg: 'var(--surface-elevated)' };
+                  const ActIcon = meta.icon;
+                  return (
+                    <Link key={`${a._leadId}-${a.id}`} href={`/crm/${a._leadId}`} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', textDecoration: 'none' }}>
+                      <span style={{ width: 28, height: 28, borderRadius: '50%', background: meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <ActIcon size={13} />
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                          {a.description}
+                        </span>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          {a._company} · {formatDateTime(a.occurred_at ?? a.created_at)}
+                        </span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+            {allActivities.length > 4 && (
+              <button
+                onClick={() => setShowAllActivities((v) => !v)}
+                style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: 0, textAlign: 'left', marginTop: 'auto' }}
+              >
+                {showAllActivities ? 'Show Less' : 'View All Activities'}
+              </button>
+            )}
+          </AnalyticsCard>
+
+          {/* Tips & Reminders */}
+          <AnalyticsCard title={
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Lightbulb size={15} style={{ color: 'var(--warning)' }} /> Tips &amp; Reminders
+            </span>
+          }>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {tips.map((tip) => (
+                <div key={tip} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                  <CheckCircle2 size={15} style={{ color: 'var(--success)', flexShrink: 0, marginTop: '1px' }} />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>{tip}</span>
+                </div>
+              ))}
+            </div>
+            {showAllReminders && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.75rem' }}>
+                {pendingFollowups.length === 0 ? (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No pending follow-ups — you&apos;re all caught up.</span>
+                ) : (
+                  pendingFollowups.slice(0, 8).map((f) => (
+                    <Link key={`${f._leadId}-${f.id}`} href={`/crm/${f._leadId}`} style={{ textDecoration: 'none' }}>
+                      <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>{f.description}</span>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{f._company} · {formatDate(f.scheduled_at)}</span>
+                    </Link>
+                  ))
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setShowAllReminders((v) => !v)}
+              className="btn btn-sm"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 'auto', background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid transparent' }}
+            >
+              {showAllReminders ? 'Hide Reminders' : 'View All Reminders'}
+            </button>
+          </AnalyticsCard>
+        </div>
+      )}
+
+      {/* ============================================================
           CREATE LEAD MODAL (SLIDE-OVER PANEL)
           ============================================================ */}
       {showCreateModal && (
@@ -868,7 +1276,7 @@ export default function LeadsPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                
+
                 const selectedServiceIds: number[] = [];
                 catalogServices.forEach(s => {
                   if (formData.get(`service_${s.id}`) === 'on') {
@@ -942,7 +1350,7 @@ export default function LeadsPage() {
               }}
               style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
             >
-              
+
               {/* SECTION: Company Info */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
                 <h3 style={{ fontSize: '0.875rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.04em' }}>1. Company Info</h3>
@@ -1019,7 +1427,7 @@ export default function LeadsPage() {
                       Pipeline Stage
                       <HelpIcon text="Where the lead starts on the Kanban board. Usually the first stage — you can drag it forward later." />
                     </label>
-                    <select name="stage_id" className="form-input">
+                    <select name="stage_id" className="form-input" defaultValue={createStageId != null ? String(createStageId) : ''}>
                       <option value="">Select Stage</option>
                       {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -1130,6 +1538,213 @@ export default function LeadsPage() {
       )}
 
     </div>
+  );
+}
+
+// ============================================================
+// Presentational helpers
+// ============================================================
+
+function StatCard({ icon: Icon, iconBg, iconColor, label, value, valueColor, trend, trendIsBad, subline, help }: {
+  icon: React.ComponentType<any>;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  value: React.ReactNode;
+  valueColor?: string;
+  trend?: number | null;
+  trendIsBad?: boolean;
+  subline?: string;
+  help?: string;
+}) {
+  const isUp = (trend ?? 0) >= 0;
+  const good = trendIsBad ? !isUp : isUp;
+  const trendColor = good ? 'var(--success)' : 'var(--danger)';
+  return (
+    <div className="kpi-card" style={{ gap: '0.625rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+        <span style={{ width: 34, height: 34, borderRadius: '10px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={17} />
+        </span>
+        <span className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {label}
+          {help && <HelpIcon text={help} />}
+        </span>
+      </div>
+      <div className="kpi-value" style={valueColor ? { color: valueColor } : undefined}>{value}</div>
+      {subline ? (
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{subline}</span>
+      ) : trend === null || trend === undefined ? (
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>— vs last 7 days</span>
+      ) : (
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          {isUp
+            ? <ArrowUpRight size={13} style={{ color: trendColor }} />
+            : <ArrowDownRight size={13} style={{ color: trendColor }} />}
+          <span style={{ color: trendColor, fontWeight: 700 }}>{Math.abs(trend)}%</span>
+          vs last 7 days
+        </span>
+      )}
+    </div>
+  );
+}
+
+function InsightRow({ icon: Icon, iconBg, iconColor, label, value }: {
+  icon: React.ComponentType<any>;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '0.4375rem 0' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: 'var(--text-secondary)', minWidth: 0 }}>
+        <span style={{ width: 26, height: 26, borderRadius: '8px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={13} />
+        </span>
+        {label}
+      </span>
+      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function QuickAction({ icon: Icon, iconBg, iconColor, title, caption, onClick, href }: {
+  icon: React.ComponentType<any>;
+  iconBg: string;
+  iconColor: string;
+  title: string;
+  caption: string;
+  onClick?: () => void;
+  href?: string;
+}) {
+  const style: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: '10px',
+    padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-subtle)', background: 'transparent',
+    width: '100%', cursor: 'pointer', textDecoration: 'none', textAlign: 'left',
+  };
+  const inner = (
+    <>
+      <span style={{ width: 32, height: 32, borderRadius: '8px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={15} />
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
+        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{caption}</span>
+      </span>
+    </>
+  );
+  return href
+    ? <Link href={href} className="crm-quick-action" style={style}>{inner}</Link>
+    : <button onClick={onClick} className="crm-quick-action" style={style}>{inner}</button>;
+}
+
+function AnalyticsCard({ title, action, children }: {
+  title: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem', display: 'flex', flexDirection: 'column', gap: '0.875rem', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{title}</h3>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DonutChart({ segments, size = 148, thickness = 26 }: {
+  segments: { label: string; value: number; color: string }[];
+  size?: number;
+  thickness?: number;
+}) {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total === 0) return null;
+  const r = (size - thickness) / 2;
+  const circ = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }} role="img" aria-label="Lead source distribution">
+      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+        {segments.map((seg, i) => {
+          const frac = seg.value / total;
+          const dash = frac * circ;
+          const offset = -acc * circ;
+          acc += frac;
+          return (
+            <circle
+              key={i}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={thickness}
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={offset}
+            />
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+function TrendChart({ series }: { series: { label: string; value: number }[] }) {
+  if (series.length === 0) return null;
+  const w = 520, h = 200, pl = 30, pr = 12, pt = 10, pb = 26;
+  const iw = w - pl - pr, ih = h - pt - pb;
+  const maxVal = Math.max(...series.map((s) => s.value), 1);
+  const step = Math.max(1, Math.ceil(maxVal / 4));
+  const yMax = step * 4;
+  const n = series.length;
+  const pts = series.map((s, i) => ({
+    x: pl + (n === 1 ? iw / 2 : (i * iw) / (n - 1)),
+    y: pt + ih * (1 - s.value / yMax),
+  }));
+
+  let line = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length; i++) {
+    const mx = (pts[i - 1].x + pts[i].x) / 2;
+    line += ` C ${mx} ${pts[i - 1].y}, ${mx} ${pts[i].y}, ${pts[i].x} ${pts[i].y}`;
+  }
+  const area = `${line} L ${pts[n - 1].x} ${pt + ih} L ${pts[0].x} ${pt + ih} Z`;
+  const labelEvery = Math.max(1, Math.ceil(n / 7));
+  const dotR = n > 14 ? 2 : 3;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }} role="img" aria-label="Leads created per day">
+      <defs>
+        <linearGradient id="crmTrendFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {[0, 1, 2, 3, 4].map((i) => {
+        const y = pt + (ih * i) / 4;
+        return (
+          <g key={i}>
+            <line x1={pl} x2={w - pr} y1={y} y2={y} stroke="var(--border-subtle)" strokeWidth="1" />
+            <text x={pl - 6} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-muted)">{yMax - step * i}</text>
+          </g>
+        );
+      })}
+      <path d={area} fill="url(#crmTrendFill)" />
+      <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={dotR} fill="var(--accent)" stroke="var(--surface)" strokeWidth="1.5" />
+      ))}
+      {series.map((s, i) => (
+        (i % labelEvery === 0 || i === n - 1) && (
+          <text key={i} x={pts[i].x} y={h - 8} textAnchor="middle" fontSize="9" fill="var(--text-muted)">{s.label}</text>
+        )
+      ))}
+    </svg>
   );
 }
 

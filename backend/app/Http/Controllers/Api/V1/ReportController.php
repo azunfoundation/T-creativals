@@ -1389,7 +1389,7 @@ class ReportController extends Controller
             // ── AI generation (only when a real model is reachable) ─────────
             $aiJson = null;
             if ($this->gemini->isConfigured()) {
-                $aiPrompt = "You are the Executive Business Assistant of Creativals OS. Summarize these live business metrics for the Founder/CEO. Keep it to 2 short paragraphs under 250 words total.
+                $aiPrompt = "You are AZUN, the Executive Business Assistant of Creativals OS. Summarize these live business metrics for the Founder/CEO. Keep it to 2 short paragraphs under 250 words total.
                 Metrics:
                 - Revenue this month: ₹" . number_format($thisMonthRev) . " (which {$revChangeText} vs last month: ₹" . number_format($lastMonthRev) . ").
                 - Overdue invoices: {$overdueInvoicesCount} invoices worth ₹" . number_format($overdueInvoicesAmount) . " are past due.

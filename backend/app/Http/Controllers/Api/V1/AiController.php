@@ -338,6 +338,8 @@ class AiController extends Controller
                 'title' => 'Voice Call Session',
             ]);
             $conversationId = $conversation->id;
+        } else {
+            $conversation = AiConversation::where('user_id', $user->id)->findOrFail($conversationId);
         }
 
         // Save User Message
@@ -347,8 +349,17 @@ class AiController extends Controller
             'content' => $content,
         ]);
 
-        $history = $this->getFormattedHistory($conversationId);
-        $aiResponse = $this->gemini->chat($history, [], false);
+        // Voice sessions only need recent turns for context. Capping the history
+        // keeps each request small and fast (the full transcript grows every turn
+        // and would otherwise slow down every subsequent reply).
+        $history = array_slice($this->getFormattedHistory($conversationId), -12);
+
+        // Voice mode: concise, plain-text replies with a tight output cap so the
+        // model answers only what was asked and the spoken reply stays short.
+        $aiResponse = $this->gemini->chat($history, [], false, [
+            'voice' => true,
+            'maxOutputTokens' => 150,
+        ]);
 
         // Save Assistant Message
         AiMessage::create([

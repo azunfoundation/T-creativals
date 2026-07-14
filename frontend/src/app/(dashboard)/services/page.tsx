@@ -181,12 +181,13 @@ export default function ServicesPage() {
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<'services' | 'packages'>('services');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'all'>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'all' | 'uncategorized'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('newest');
 
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editService, setEditService] = useState<Service | null>(null);
   const [editPackage, setEditPackage] = useState<Package | null>(null);
 
@@ -273,9 +274,17 @@ export default function ServicesPage() {
     return s.name.toLowerCase().includes(q) || (s.description && s.description.toLowerCase().includes(q));
   });
 
+  // A service whose category was deleted (or never set) must still be
+  // visible, or the cards on screen won't add up to the Total Services stat.
+  const categoryIds = new Set(categories.map((c: ServiceCategory) => c.id));
+  const isUncategorized = (s: Service) => !s.category_id || !categoryIds.has(s.category_id);
+  const hasUncategorized = rawServices.some(isUncategorized);
+
   const catFilteredServices = selectedCategoryFilter === 'all'
     ? searchedServices
-    : searchedServices.filter((s: Service) => s.category_id === selectedCategoryFilter);
+    : selectedCategoryFilter === 'uncategorized'
+      ? searchedServices.filter(isUncategorized)
+      : searchedServices.filter((s: Service) => s.category_id === selectedCategoryFilter);
 
   const processedServices = [...catFilteredServices].sort((a: Service, b: Service) => {
     switch (sortBy) {
@@ -288,11 +297,14 @@ export default function ServicesPage() {
     }
   });
 
-  const servicesByCategory = categories.map((cat: ServiceCategory) => ({
-    ...cat,
-    services: processedServices.filter((s: Service) => s.category_id === cat.id),
-  })).filter((cat: any) => selectedCategoryFilter === 'all' || cat.id === selectedCategoryFilter)
-     .filter((cat: any) => cat.services.length > 0);
+  const servicesByCategory = [
+    ...categories.map((cat: ServiceCategory) => ({
+      ...cat,
+      services: processedServices.filter((s: Service) => s.category_id === cat.id),
+    })),
+    { id: 'uncategorized' as const, name: 'Uncategorized', services: processedServices.filter(isUncategorized) },
+  ].filter((cat: any) => selectedCategoryFilter === 'all' || cat.id === selectedCategoryFilter)
+   .filter((cat: any) => cat.services.length > 0);
 
   const processedPackages = packagesList.filter((pkg: Package) => {
     if (!searchQuery.trim()) return true;
@@ -348,6 +360,14 @@ export default function ServicesPage() {
           </p>
           <div className="flex gap-3 relative z-20">
             <HowToUseGuide moduleKey="services" title="How the Service Catalog Works" content={SERVICES_HOWTO} />
+            {canManage && (
+              <button
+                onClick={() => setCategoryModalOpen(true)}
+                className="btn btn-secondary flex items-center gap-1.5"
+              >
+                <Tag size={15} /> Manage Categories
+              </button>
+            )}
             {canManage && (activeTab === 'services' ? (
               <button
                 onClick={() => { setEditService(null); setServiceModalOpen(true); }}
@@ -393,62 +413,75 @@ export default function ServicesPage() {
             </button>
           </div>
 
-          {activeTab === 'services' && (
-            <div className="flex flex-wrap gap-2 items-center mb-4">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-2">Filter Category:</span>
-              <button
-                onClick={() => setSelectedCategoryFilter('all')}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  selectedCategoryFilter === 'all' 
-                    ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20' 
-                    : 'bg-transparent border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                All Categories
-              </button>
-              {categories.map((cat: ServiceCategory) => (
+          {/* Filters, Search & Sort Row */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-6">
+            {activeTab === 'services' && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-2">Filter Category:</span>
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategoryFilter(cat.id)}
+                  onClick={() => setSelectedCategoryFilter('all')}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    selectedCategoryFilter === cat.id 
-                      ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20' 
+                    selectedCategoryFilter === 'all'
+                      ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20'
                       : 'bg-transparent border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
+                  }`}
                 >
-                  {cat.name}
+                  All Categories
                 </button>
-              ))}
-            </div>
-          )}
-
-          {/* Search & Sort Row */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input 
-                type="text"
-                placeholder={activeTab === 'services' ? "Search services..." : "Search packages..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Sort by</span>
-              <div className="relative">
-                <select 
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="appearance-none bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 py-2 pl-3 pr-8 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm font-semibold cursor-pointer"
-                >
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="name">Name A-Z</option>
-                  <option value="price_asc">Price Low-High</option>
-                  <option value="price_desc">Price High-Low</option>
-                </select>
-                <SlidersHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                {categories.map((cat: ServiceCategory) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategoryFilter(cat.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      selectedCategoryFilter === cat.id
+                        ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20'
+                        : 'bg-transparent border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+                {hasUncategorized && (
+                  <button
+                    onClick={() => setSelectedCategoryFilter('uncategorized')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      selectedCategoryFilter === 'uncategorized'
+                        ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20'
+                        : 'bg-transparent border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    Uncategorized
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="flex flex-1 justify-end items-center gap-3 min-w-[300px]">
+              <div className="relative w-full max-w-[260px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder={activeTab === 'services' ? "Search services..." : "Search packages..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">Sort by</span>
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="appearance-none bg-white dark:bg-[#1a1a24] border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 py-2 pl-3 pr-8 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all shadow-sm font-semibold cursor-pointer"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="name">Name A-Z</option>
+                    <option value="price_asc">Price Low-High</option>
+                    <option value="price_desc">Price High-Low</option>
+                  </select>
+                  <SlidersHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                </div>
               </div>
             </div>
           </div>
@@ -815,6 +848,217 @@ export default function ServicesPage() {
           onSuccess={() => queryClient.invalidateQueries({ queryKey: ['packages'] })}
         />
       )}
+
+      {categoryModalOpen && (
+        <CategoryManagerModal
+          categories={categories}
+          servicesList={rawServices}
+          onClose={() => setCategoryModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CATEGORY MANAGER MODAL COMPONENT ───────────────────────────
+function CategoryManagerModal({
+  categories,
+  servicesList,
+  onClose,
+}: {
+  categories: ServiceCategory[];
+  servicesList: Service[];
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['serviceCategories'] });
+    queryClient.invalidateQueries({ queryKey: ['services'] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (name: string) => categoriesApi.create({ name }),
+    onSuccess: () => { invalidate(); setNewName(''); showToast('Category created', 'success'); },
+    onError: (err) => showToast(getApiErrorMessage(err, 'Failed to create category.'), 'error'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => categoriesApi.update(id, { name }),
+    onSuccess: () => { invalidate(); setEditingId(null); showToast('Category renamed', 'success'); },
+    onError: (err) => showToast(getApiErrorMessage(err, 'Failed to rename category.'), 'error'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => categoriesApi.delete(id),
+    onSuccess: () => { invalidate(); setDeleteConfirmId(null); showToast('Category deleted', 'success'); },
+    onError: (err) => showToast(getApiErrorMessage(err, 'Failed to delete category.'), 'error'),
+  });
+
+  const countFor = (catId: number) => servicesList.filter((s: Service) => s.category_id === catId).length;
+
+  const handleCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    createMutation.mutate(name);
+  };
+
+  const handleRename = () => {
+    const name = editName.trim();
+    if (!name || editingId === null) return;
+    updateMutation.mutate({ id: editingId, name });
+  };
+
+  return (
+    <div className="overlay z-50" onClick={onClose}>
+      <div
+        className="modal max-w-md w-full shadow-lg text-primary"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header px-6 py-4 flex justify-between items-center" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h2 className="modal-title text-lg font-bold flex items-center gap-2">
+            <Tag size={16} className="text-violet-500" /> Manage Categories
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost btn-icon p-1 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 flex flex-col gap-4">
+          {/* Create row */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              autoFocus
+              placeholder="New category name…"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+              className="form-input flex-1"
+            />
+            <button
+              onClick={handleCreate}
+              disabled={!newName.trim() || createMutation.isPending}
+              className="btn btn-primary flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Plus size={15} /> {createMutation.isPending ? 'Adding…' : 'Add'}
+            </button>
+          </div>
+
+          {/* Category list */}
+          <div className="rounded-lg max-h-80 overflow-y-auto" style={{ border: '1px solid var(--border)' }}>
+            {categories.length === 0 ? (
+              <p className="text-sm text-muted text-center py-6">No categories yet — add your first one above.</p>
+            ) : (
+              categories.map((cat: ServiceCategory, idx: number) => {
+                const style = getCategoryStyle(cat.name);
+                const CatIcon = style.Icon;
+                const count = countFor(cat.id);
+                const isEditing = editingId === cat.id;
+                const isConfirmingDelete = deleteConfirmId === cat.id;
+
+                return (
+                  <div
+                    key={cat.id}
+                    className="px-3 py-2.5 flex items-center gap-3"
+                    style={{ borderTop: idx > 0 ? '1px solid var(--border-subtle)' : 'none' }}
+                  >
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={style.iconBgStyle}>
+                      <CatIcon size={15} style={{ color: style.iconColor }} />
+                    </div>
+
+                    {isEditing ? (
+                      <>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRename();
+                            if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          className="form-input flex-1 py-1.5 text-sm"
+                        />
+                        <button
+                          onClick={handleRename}
+                          disabled={!editName.trim() || updateMutation.isPending}
+                          className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                          title="Save"
+                        >
+                          <Check size={15} strokeWidth={3} />
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                          title="Cancel"
+                        >
+                          <X size={15} />
+                        </button>
+                      </>
+                    ) : isConfirmingDelete ? (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-danger block truncate">Delete “{cat.name}”?</span>
+                          <span className="text-xs text-muted">
+                            {count > 0 ? `${count} service${count === 1 ? '' : 's'} will move to Uncategorized.` : 'This cannot be undone.'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => deleteMutation.mutate(cat.id)}
+                          disabled={deleteMutation.isPending}
+                          className="px-2.5 py-1 rounded-md text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors"
+                        >
+                          {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="px-2.5 py-1 rounded-md text-xs font-semibold border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-primary block truncate">{cat.name}</span>
+                          <span className="text-xs text-muted">{count} service{count === 1 ? '' : 's'}</span>
+                        </div>
+                        <button
+                          onClick={() => { setEditingId(cat.id); setEditName(cat.name); setDeleteConfirmId(null); }}
+                          className="p-1.5 rounded-md text-zinc-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                          title="Rename category"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => { setDeleteConfirmId(cat.id); setEditingId(null); }}
+                          className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          title="Delete category"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <p className="text-xs text-muted leading-relaxed">
+            Deleting a category never deletes its services — they move to the
+            “Uncategorized” group, where you can reassign them by editing each service.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

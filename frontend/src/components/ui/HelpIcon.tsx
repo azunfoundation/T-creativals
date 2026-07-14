@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Info } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Info, X } from 'lucide-react';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface HelpContent {
   what?: string;
@@ -24,15 +29,20 @@ interface HelpIconProps {
   size?: number;
 }
 
-/**
- * Searches the incoming text or title to dynamically construct rich, context-specific
- * help content for standard system fields, complying with the What/Why/When/Example/Avoid guidelines.
- */
+// Panel dimensions (used for positioning math)
+const PANEL_WIDTH = 320;
+const PANEL_MAX_HEIGHT = 480;
+const PANEL_MARGIN = 10; // gap from trigger icon, px
+const VIEWPORT_PADDING = 8; // min distance from viewport edges, px
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rich content enrichment logic  (unchanged from original)
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getEnrichedContent(text?: string, title?: string): HelpContent {
   const normText = (text || '').toLowerCase();
   const normTitle = (title || '').toLowerCase();
 
-  // 1. Temperature
   if (normText.includes('temperature') || normTitle.includes('temperature') || normText.includes('cold: just exploring')) {
     return {
       what: 'A purchasing readiness rating indicating how close a lead is to buying (Cold, Warm, or Hot).',
@@ -43,7 +53,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 2. Monthly Budget / Budget
   if (normText.includes('monthly budget') || normTitle.includes('monthly budget') || normText.includes('estimated monthly') || normText.includes('budget filter') || normTitle.includes('budget')) {
     return {
       what: 'The estimated monthly spend a prospect or client is willing to allocate for services.',
@@ -54,7 +63,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 3. Tax / GST / TDS
   if (normText.includes('tds') || normText.includes('tax deducted') || normText.includes('gst percentage') || normTitle.includes('tax') || normText.includes('tax rate') || normText.includes('tax percentage')) {
     return {
       what: 'Statutory tax rates (e.g. GST) or withholding tax percentages (TDS) applied to transactions or payroll.',
@@ -65,7 +73,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 4. Status
   if (normText.includes('status guide') || normText.includes('status') || normTitle.includes('status')) {
     return {
       what: 'The active lifecycle state of a record (e.g., active/inactive user, paid/unpaid invoice, in-progress task).',
@@ -76,7 +83,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 5. Priority
   if (normText.includes('priority') || normTitle.includes('priority')) {
     return {
       what: 'The urgency level of a task or project, ranging from Low to Critical.',
@@ -87,7 +93,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 6. Assignee / Accountable
   if (normText.includes('assignee') || normText.includes('accountable') || normText.includes('assigned') || normTitle.includes('assignee')) {
     return {
       what: 'The designated employee responsible for completing a task or overseeing a lead.',
@@ -98,7 +103,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 7. Approval
   if (normText.includes('approval') || normText.includes('approve') || normTitle.includes('approval') || normText.includes('review')) {
     return {
       what: 'Managerial sign-off on billable timesheets, quotes, or business expenses.',
@@ -109,7 +113,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 8. Interested Services
   if (normText.includes('interested services') || normText.includes('services this lead wants') || normText.includes('services lead wants') || normTitle.includes('services')) {
     return {
       what: 'A checklist of services a lead is interested in purchasing (e.g. UI/UX Design, Development).',
@@ -120,7 +123,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 9. Client Health Score
   if (normText.includes('health score') || normTitle.includes('health')) {
     return {
       what: 'A numerical rating (0-100) reflecting the stability and collection risk of a client account.',
@@ -131,7 +133,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 10. Portal Access
   if (normText.includes('portal access') || normText.includes('client portal') || normTitle.includes('portal')) {
     return {
       what: 'A toggle that enables or disables client sign-in to the customer portal.',
@@ -142,7 +143,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 11. Lifetime Billed
   if (normText.includes('billed') || normTitle.includes('billed')) {
     return {
       what: 'The total value of all approved invoices generated for a client since onboarding.',
@@ -153,7 +153,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 12. Outstanding
   if (normText.includes('outstanding') || normTitle.includes('outstanding')) {
     return {
       what: 'The cumulative total of unpaid invoices currently sent to a client.',
@@ -164,7 +163,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 13. PF (Provident Fund)
   if (normText.includes('provident fund') || normText.includes('pf') || normTitle.includes('pf')) {
     return {
       what: 'Retirement-savings percentage deducted from basic salary (usually 12%).',
@@ -175,7 +173,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 14. ESI (Employee State Insurance)
   if (normText.includes('employee state insurance') || normText.includes('esi') || normTitle.includes('esi')) {
     return {
       what: 'State-managed healthcare insurance contribution deducted from eligible employee salaries.',
@@ -186,7 +183,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 15. Employee ID
   if (normText.includes('internal staff code') || normText.includes('employee id') || normTitle.includes('employee id') || normText.includes('staff code')) {
     return {
       what: 'A unique code identifying an employee internally (e.g. CRE007).',
@@ -197,7 +193,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 16. Roles
   if (normText.includes('roles') || normTitle.includes('roles') || normText.includes('role controls')) {
     return {
       what: 'System permissions (e.g. Admin, Designer) defining access to platform features.',
@@ -208,7 +203,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 17. Departments
   if (normText.includes('departments') || normTitle.includes('departments') || normText.includes('which team')) {
     return {
       what: 'Organizational groupings representing functional divisions (e.g., Design, Tech).',
@@ -219,7 +213,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 18. Manager / Reports To
   if (normText.includes('manager') || normText.includes('reports to') || normTitle.includes('manager')) {
     return {
       what: 'Direct reporting structure outlining which supervisor reviews an employee\'s output.',
@@ -230,7 +223,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 19. Expected Start Date
   if (normText.includes('expected start date')) {
     return {
       what: 'The anticipated calendar date when project executions are set to kick off.',
@@ -241,7 +233,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 20. Quote Term / Receives
   if (normText.includes('quote the client receives') || normText.includes('validity, payment split')) {
     return {
       what: 'Printable quote details detailing validity dates, payment splits, and specific tax terms.',
@@ -252,7 +243,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 21. Hourly Rate / Pre-tax / Price
   if (normText.includes('price for one unit') || normText.includes('pre-tax price')) {
     return {
       what: 'The pre-tax price billed for one unit of service (e.g. per hour, per month, or package flat rate).',
@@ -263,7 +253,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 22. Billing Unit / Billed Metric
   if (normText.includes('how this service is billed')) {
     return {
       what: 'The billing type setting (per hour, per month, flat rate, per unit) for catalog items.',
@@ -274,7 +263,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 23. Package Discount
   if (normText.includes('combined base price') || normText.includes('take a % off')) {
     return {
       what: 'Group rate discount percentages or flat rates applied to service bundles.',
@@ -285,7 +273,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 24. Service Package Selector
   if (normText.includes('tick every service included')) {
     return {
       what: 'A catalog selection list grouping multiple services into a single package.',
@@ -296,7 +283,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 25. Timesheet Billable Toggle
   if (normText.includes('uncheck for internal work')) {
     return {
       what: 'A toggle separating billable client execution hours from internal administrative work.',
@@ -307,7 +293,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 26. Temporary Password Input
   if (normText.includes('temporary password for the new user')) {
     return {
       what: 'Initial secure login credentials set temporarily for new platform users.',
@@ -318,7 +303,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 27. Automation Trigger Selector
   if (normText.includes('platform event that starts this rule')) {
     return {
       what: 'The base system event (e.g. invoice creation, lead status change) initiating an automation sequence.',
@@ -329,7 +313,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 28. Automation Switch Toggle
   if (normText.includes('switch this rule on or off')) {
     return {
       what: 'A toggle enabling or disabling active execution status for an automation rule.',
@@ -340,7 +323,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 29. Automation Filters / Conditions
   if (normText.includes('filter checked before the action')) {
     return {
       what: 'Filtering conditions verifying record values before executing automation actions.',
@@ -351,7 +333,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 30. Automation Action Output
   if (normText.includes('what happens when the rule fires')) {
     return {
       what: 'The target system output (task creation, notifications) executed upon rule triggers.',
@@ -362,7 +343,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 31. Automation Target Project ID
   if (normText.includes('numeric id of the project')) {
     return {
       what: 'The target database ID of the project where automated tasks are created.',
@@ -373,7 +353,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 32. Retainer Project Checkbox
   if (normText.includes('project is a retainer')) {
     return {
       what: 'A configuration setting indicating a recurring monthly service project model.',
@@ -384,7 +363,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 33. Task Template List Import
   if (normText.includes('each line becomes one task')) {
     return {
       what: 'A line-separated text import field mapping rows to individual tasks.',
@@ -395,7 +373,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 34. Project Client Association
   if (normText.includes('client account this project is billed under')) {
     return {
       what: 'The primary client association link governing project billing and reports.',
@@ -406,7 +383,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 35. Project Funding Link
   if (normText.includes('link the invoice that is funding')) {
     return {
       what: 'A relational invoice mapping link associating a project with its source funding billing invoice.',
@@ -417,7 +393,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 36. Project Director / Lead
   if (normText.includes('employee accountable for this project')) {
     return {
       what: 'The designated employee responsible for directing the project team and confirming milestones.',
@@ -428,7 +403,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 37. Project Hour Budgets
   if (normText.includes('hours you expect this project to take')) {
     return {
       what: 'The budgeted hour threshold allocated for total project completions.',
@@ -439,7 +413,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 38. Project Value
   if (normText.includes('contract value for this project')) {
     return {
       what: 'The total revenue value agreed for the project contract scope.',
@@ -450,7 +423,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 39. Milestones Checkpoint
   if (normText.includes('milestones are the big checkpoints')) {
     return {
       what: 'Timeline checkpoint stages categorizing project workflows (e.g. Phase 1: Planning).',
@@ -461,7 +433,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 40. Project Revenue Origin
   if (normText.includes('revenue comes from this project')) {
     return {
       what: 'Profitability metric showing total received billing amounts originating from a project.',
@@ -472,7 +443,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 41. Quote Lead Association
   if (normText.includes('crm lead this proposal is for')) {
     return {
       what: 'CRM mapping linking a proposal quote to a sales prospect record.',
@@ -483,7 +453,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 42. Repeat Business Quote Toggle
   if (normText.includes('use this instead of a lead')) {
     return {
       what: 'Option to quote active clients directly for new work contracts (repeat business).',
@@ -494,7 +463,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 43. Subtask Checklist Item
   if (normText.includes('each subtask is its own small task')) {
     return {
       what: 'Micro checklist items embedded within a larger task description.',
@@ -505,7 +473,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // 44. Project Navigation Link
   if (normText.includes('click any project card to see')) {
     return {
       what: 'Dashboard navigation cards linking to full project workspace views.',
@@ -516,7 +483,6 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  // Fallback: If no keyword matches, wrap the plain text in the what field.
   return generateFallbackHelp(text || '', title);
 }
 
@@ -530,7 +496,6 @@ function generateFallbackHelp(text: string, title?: string): HelpContent {
       inferredTitle = words.slice(0, 3).join(' ').replace(/[—.-]/g, '').trim() + ' Info';
     }
   }
-
   inferredTitle = inferredTitle
     .split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
@@ -545,77 +510,316 @@ function generateFallbackHelp(text: string, title?: string): HelpContent {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Portal-based floating panel — renders directly into document.body so it is
+// NEVER clipped by a parent container's overflow:hidden.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PanelPosition {
+  top: number;
+  left: number;
+  transformOrigin: string;
+}
+
+function computePosition(triggerRect: DOMRect): PanelPosition {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const p = VIEWPORT_PADDING;
+
+  // Try RIGHT of the icon first
+  const spaceRight = vw - triggerRect.right - PANEL_MARGIN;
+  const spaceLeft  = triggerRect.left - PANEL_MARGIN;
+  const spaceBelow = vh - triggerRect.bottom - PANEL_MARGIN;
+  const spaceAbove = triggerRect.top - PANEL_MARGIN;
+
+  let left: number;
+  let top: number;
+  let transformOrigin: string;
+
+  // ── Horizontal axis ──
+  if (spaceRight >= PANEL_WIDTH) {
+    // Enough space to the right
+    left = triggerRect.right + PANEL_MARGIN;
+    transformOrigin = 'left center';
+  } else if (spaceLeft >= PANEL_WIDTH) {
+    // Enough space to the left
+    left = triggerRect.left - PANEL_MARGIN - PANEL_WIDTH;
+    transformOrigin = 'right center';
+  } else {
+    // Neither side has full width — center horizontally and clamp
+    left = triggerRect.left + triggerRect.width / 2 - PANEL_WIDTH / 2;
+    transformOrigin = 'top center';
+  }
+
+  // ── Vertical axis (start aligned to trigger center) ──
+  const idealTop = triggerRect.top + triggerRect.height / 2 - 40;
+
+  if (transformOrigin === 'top center') {
+    // Panel goes below or above
+    if (spaceBelow >= PANEL_MAX_HEIGHT * 0.5) {
+      top = triggerRect.bottom + PANEL_MARGIN;
+      transformOrigin = 'top center';
+    } else {
+      top = triggerRect.top - PANEL_MARGIN - Math.min(PANEL_MAX_HEIGHT, spaceAbove);
+      transformOrigin = 'bottom center';
+    }
+  } else {
+    top = idealTop;
+  }
+
+  // ── Clamp so the panel is always fully inside the viewport ──
+  const maxLeft = vw - PANEL_WIDTH - p;
+  left = Math.max(p, Math.min(left, maxLeft));
+  top  = Math.max(p, Math.min(top, vh - p));
+
+  return { top, left, transformOrigin };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Floating panel (portal child)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FloatingPanelProps {
+  triggerRect: DOMRect;
+  resolvedContent: HelpContent;
+  title?: string;
+  onClose: () => void;
+}
+
+function FloatingHelpPanel({ triggerRect, resolvedContent, title, onClose }: FloatingPanelProps) {
+  const [pos, setPos] = useState<PanelPosition>(() => computePosition(triggerRect));
+  const [visible, setVisible] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Animate in
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Recompute on scroll/resize
+  useEffect(() => {
+    const recompute = () => setPos(computePosition(triggerRect));
+    window.addEventListener('scroll', recompute, true);
+    window.addEventListener('resize', recompute);
+    return () => {
+      window.removeEventListener('scroll', recompute, true);
+      window.removeEventListener('resize', recompute);
+    };
+  }, [triggerRect]);
+
+  // Click-outside & Escape to close
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  const panelStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: pos.top,
+    left: pos.left,
+    zIndex: 2147483647, // max z-index — always above everything
+    width: PANEL_WIDTH,
+    maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
+    maxHeight: PANEL_MAX_HEIGHT,
+    overflowY: 'auto',
+    background: 'var(--surface-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18)',
+    padding: '1rem 1.125rem 1.125rem',
+    fontSize: '0.8125rem',
+    lineHeight: 1.6,
+    color: 'var(--text-secondary)',
+    textAlign: 'left',
+    transformOrigin: pos.transformOrigin,
+    // Animate in
+    opacity: visible ? 1 : 0,
+    transform: visible ? 'scale(1) translateY(0)' : 'scale(0.94) translateY(-4px)',
+    transition: 'opacity 0.18s ease, transform 0.18s ease',
+    pointerEvents: 'auto',
+    // Custom scrollbar styling (CSS vars might not apply here so we inline webkit)
+    scrollbarWidth: 'thin',
+  };
+
+  const sectionStyle: React.CSSProperties = { margin: '0 0 0.5rem' };
+  const strongPrimary: React.CSSProperties = { color: 'var(--text-primary)' };
+  const strongDanger: React.CSSProperties = { color: 'var(--danger)' };
+  const strongSuccess: React.CSSProperties = { color: 'var(--success)' };
+  const listStyle: React.CSSProperties = { margin: '0.25rem 0 0', paddingLeft: '1.1rem' };
+
+  return (
+    <div
+      ref={panelRef}
+      role="tooltip"
+      aria-label={title || 'Help information'}
+      style={panelStyle}
+      onClick={e => e.stopPropagation()}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.625rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+          <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          {title && (
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.8125rem', letterSpacing: '0.01em' }}>
+              {title}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close help panel"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: 'transparent',
+            border: 'none', cursor: 'pointer', padding: 0,
+            color: 'var(--text-muted)',
+            flexShrink: 0,
+            transition: 'background 0.15s, color 0.15s',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-hover)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
+          }}
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'var(--border)', marginBottom: '0.625rem', opacity: 0.6 }} />
+
+      {/* Content sections */}
+      {resolvedContent.what && (
+        <p style={sectionStyle}>
+          <strong style={strongPrimary}>What is it? </strong>
+          {resolvedContent.what}
+        </p>
+      )}
+      {resolvedContent.why && (
+        <p style={sectionStyle}>
+          <strong style={strongPrimary}>Why is it used? </strong>
+          {resolvedContent.why}
+        </p>
+      )}
+      {resolvedContent.when && (
+        <p style={sectionStyle}>
+          <strong style={strongPrimary}>When should it be used? </strong>
+          {resolvedContent.when}
+        </p>
+      )}
+      {resolvedContent.example && (
+        <p style={sectionStyle}>
+          <strong style={strongPrimary}>Example: </strong>
+          {resolvedContent.example}
+        </p>
+      )}
+      {resolvedContent.warning && (
+        <p style={sectionStyle}>
+          <strong style={strongDanger}>Warning: </strong>
+          {resolvedContent.warning}
+        </p>
+      )}
+      {resolvedContent.steps && resolvedContent.steps.length > 0 && (
+        <div style={sectionStyle}>
+          <strong style={strongPrimary}>Steps:</strong>
+          <ol style={listStyle}>
+            {resolvedContent.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+        </div>
+      )}
+      {resolvedContent.bestPractices && resolvedContent.bestPractices.length > 0 && (
+        <div style={sectionStyle}>
+          <strong style={strongSuccess}>Best practice:</strong>
+          <ul style={listStyle}>
+            {resolvedContent.bestPractices.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
+        </div>
+      )}
+      {resolvedContent.mistakes && resolvedContent.mistakes.length > 0 && (
+        <div>
+          <strong style={strongDanger}>Avoid:</strong>
+          <ul style={listStyle}>
+            {resolvedContent.mistakes.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main HelpIcon export
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
   const [open, setOpen] = useState(false);
-  const [alignRight, setAlignRight] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
+  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const resolvedContent = content || getEnrichedContent(text, title);
 
-  const handleOpen = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setOpen(true);
-  };
+  // Only portal-render client-side
+  useEffect(() => { setMounted(true); }, []);
 
-  const handleClose = () => {
+  const openPanel = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      setOpen(false);
-    }, 150);
-  };
-
-  useEffect(() => {
-    if (open && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      const screenWidth = window.innerWidth;
-      // If the icon is on the right half of the viewport, align popover to the right edge
-      if (rect.left + 160 > screenWidth) {
-        setAlignRight(true);
-      } else {
-        setAlignRight(false);
-      }
+    if (btnRef.current) {
+      setTriggerRect(btnRef.current.getBoundingClientRect());
     }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('keydown', handleKey);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+    setOpen(true);
   }, []);
 
+  const closePanel = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setOpen(false), 80);
+  }, []);
+
+  const togglePanel = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (open) {
+      setOpen(false);
+    } else {
+      openPanel();
+    }
+  }, [open, openPanel]);
+
+  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+
   return (
-    <span
-      ref={ref}
-      onMouseEnter={handleOpen}
-      onMouseLeave={handleClose}
-      onFocus={handleOpen}
-      onBlur={handleClose}
-      style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}
-    >
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        onClick={togglePanel}
+        onMouseEnter={openPanel}
+        onMouseLeave={closePanel}
+        onFocus={openPanel}
+        onBlur={closePanel}
         title={text || 'Help'}
         aria-expanded={open}
+        aria-haspopup="dialog"
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: size + 6, height: size + 6, borderRadius: '50%',
@@ -623,73 +827,26 @@ export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
           color: open ? 'var(--accent)' : 'var(--text-muted)',
           border: 'none', cursor: 'pointer', padding: 0,
           outline: 'none',
+          verticalAlign: 'middle',
+          flexShrink: 0,
+          transition: 'background 0.15s, color 0.15s',
         }}
       >
         <Info size={size} />
       </button>
 
-      {open && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute', top: '130%',
-            left: alignRight ? 'auto' : 0,
-            right: alignRight ? 0 : 'auto',
-            zIndex: 9999,
-            width: '320px', maxWidth: '80vw',
-            background: 'var(--surface-elevated)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-            padding: '0.875rem 1rem', fontSize: '0.8125rem', lineHeight: 1.5,
-            color: 'var(--text-secondary)',
-            textAlign: 'left',
-          }}
-        >
-          {title && (
-            <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem', fontSize: '0.8125rem' }}>
-              {title}
-            </div>
-          )}
-          {resolvedContent.what && (
-            <p style={{ margin: '0 0 0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>What is it? </strong>{resolvedContent.what}</p>
-          )}
-          {resolvedContent.why && (
-            <p style={{ margin: '0 0 0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Why is it used? </strong>{resolvedContent.why}</p>
-          )}
-          {resolvedContent.when && (
-            <p style={{ margin: '0 0 0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>When should it be used? </strong>{resolvedContent.when}</p>
-          )}
-          {resolvedContent.example && (
-            <p style={{ margin: '0 0 0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Example: </strong>{resolvedContent.example}</p>
-          )}
-          {resolvedContent.warning && (
-            <p style={{ margin: '0 0 0.5rem' }}><strong style={{ color: 'var(--danger)' }}>Warning: </strong>{resolvedContent.warning}</p>
-          )}
-          {resolvedContent.steps && resolvedContent.steps.length > 0 && (
-            <div style={{ margin: '0 0 0.5rem' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Steps:</strong>
-              <ol style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
-                {resolvedContent.steps.map((s, i) => <li key={i}>{s}</li>)}
-              </ol>
-            </div>
-          )}
-          {resolvedContent.bestPractices && resolvedContent.bestPractices.length > 0 && (
-            <div style={{ margin: '0 0 0.5rem' }}>
-              <strong style={{ color: 'var(--success)' }}>Best practice:</strong>
-              <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
-                {resolvedContent.bestPractices.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </div>
-          )}
-          {resolvedContent.mistakes && resolvedContent.mistakes.length > 0 && (
-            <div>
-              <strong style={{ color: 'var(--danger)' }}>Avoid:</strong>
-              <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
-                {resolvedContent.mistakes.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-    </span>
+      {/* Portal: renders directly into document.body — never clipped */}
+      {mounted && open && triggerRect &&
+        createPortal(
+          <FloatingHelpPanel
+            triggerRect={triggerRect}
+            resolvedContent={resolvedContent}
+            title={title}
+            onClose={() => setOpen(false)}
+          />,
+          document.body
+        )
+      }
+    </>
   );
 }

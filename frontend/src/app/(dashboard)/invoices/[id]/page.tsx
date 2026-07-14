@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoices as invoicesApi, creditNotes as creditNotesApi, payments as paymentsApi, getApiErrorMessage } from '@/lib/api';
+import { invoices as invoicesApi, creditNotes as creditNotesApi, payments as paymentsApi, platformSettings as settingsApi, SystemSettings, getApiErrorMessage } from '@/lib/api';
 import type { Invoice, Payment } from '@/lib/api';
 import { 
   ArrowLeft, Printer, FileText, Calendar, Building, CreditCard, 
@@ -99,6 +99,15 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
   const [creditNoteDrawerOpen, setCreditNoteDrawerOpen] = useState(false);
   const [creditNoteAmount, setCreditNoteAmount] = useState<number>(0);
   const [creditNoteReason, setCreditNoteReason] = useState('');
+
+  // Fetch settings
+  const { data: settings } = useQuery<SystemSettings>({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      const res = await settingsApi.get();
+      return res.data;
+    },
+  });
 
   // Fetch Invoice Details directly from the real API — no localStorage shadow.
   const { data: invoice, isLoading, refetch } = useQuery<Invoice>({
@@ -194,6 +203,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
     onError: (err: any) => showToast(getApiErrorMessage(err, 'Failed to reject invoice.'), 'error'),
   });
 
+  const recordPaymentMutation = useMutation({
+    mutationFn: (data: any) => invoicesApi.recordPayment(invoiceId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices_dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] });
+      setPaymentDrawerOpen(false);
+    },
+    onError: (err: any) => {
+      setPaymentError(getApiErrorMessage(err, 'Failed to record payment.'));
+    }
+  });
+
   useEffect(() => {
     if (invoice) {
       setPaymentAmount(invoice.due_amount);
@@ -274,17 +295,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
     }
   };
 
-  const recordPaymentMutation = useMutation({
-    mutationFn: (data: any) => invoicesApi.recordPayment(invoiceId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices_dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] });
-      setPaymentDrawerOpen(false);
-    },
-    onError: (err: any) => {
-      setPaymentError(getApiErrorMessage(err, 'Failed to record payment.'));
-    }
-  });
+
 
   const handleRecordPayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -498,16 +509,33 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg, var(--accent), #4f46e5)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-sm)' }}>
-                    <FileText style={{ color: '#ffffff', width: '18px', height: '18px' }} />
+                  <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: 'var(--shadow-sm)', background: settings?.company?.logo_url ? 'none' : 'linear-gradient(135deg, var(--accent), #4f46e5)' }}>
+                    {settings?.company?.logo_url ? (
+                      <img 
+                        src={settings.company.logo_url} 
+                        alt="Logo" 
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                      />
+                    ) : (
+                      <FileText style={{ color: '#ffffff', width: '18px', height: '18px' }} />
+                    )}
                   </div>
-                  <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Creativals Agency</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                    {settings?.company?.company_name || 'Creativals Agency'}
+                  </span>
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.125rem', lineHeight: 1.5 }}>
-                  <p>7th Floor, DLF Cyber City, Phase 3</p>
-                  <p>Gurugram, Haryana - 122002</p>
-                  <p>GSTIN: 06AAFCC1483L1ZS</p>
-                  <p>Email: billing@creativals.in</p>
+                  {settings?.company?.company_address ? (
+                    <p style={{ whiteSpace: 'pre-line' }}>{settings.company.company_address}</p>
+                  ) : (
+                    <>
+                      <p>7th Floor, DLF Cyber City, Phase 3</p>
+                      <p>Gurugram, Haryana - 122002</p>
+                      <p>GSTIN: 06AAFCC1483L1ZS</p>
+                    </>
+                  )}
+                  {settings?.company?.company_phone && <p>Phone: {settings.company.company_phone}</p>}
+                  <p>Email: {settings?.company?.company_email || 'billing@creativals.in'}</p>
                 </div>
               </div>
 

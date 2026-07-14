@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -18,13 +18,8 @@ export default function RevenueReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -76,13 +71,11 @@ export default function RevenueReport() {
       label: 'Outstanding Balance',
       align: 'right' as const,
       render: (val: any) => (
-        <span
-          style={{
-            fontFamily: 'monospace',
-            fontWeight: Number(val) > 0 ? 600 : undefined,
-            color: Number(val) > 0 ? 'var(--danger)' : 'var(--text-muted)',
-          }}
-        >
+        <span style={{
+          fontFamily: 'monospace',
+          fontWeight: Number(val) > 0 ? 600 : undefined,
+          color: Number(val) > 0 ? 'var(--danger)' : 'var(--text-muted)',
+        }}>
           {formatCurrency(Number(val))}
         </span>
       ),
@@ -146,30 +139,34 @@ export default function RevenueReport() {
               value={formatCurrency(data.summary.total_invoiced)}
               subtext={`${data.summary.invoice_count} Invoices Issued`}
               icon={<DollarSign size={18} />}
+              accent="info"
             />
             <KpiCard
               title="Total Collected"
               value={formatCurrency(data.summary.total_collected)}
               subtext="Received Payments"
               icon={<Wallet size={18} />}
+              accent="success"
             />
             <KpiCard
-              title="Outstanding receivables"
+              title="Outstanding Receivables"
               value={formatCurrency(data.summary.total_outstanding)}
               subtext="Unpaid Balances"
               icon={<AlertCircle size={18} />}
+              accent="danger"
             />
             <KpiCard
               title="Collection Efficiency"
               value={`${data.summary.collection_rate_pct}%`}
               subtext="Billed vs Collected Ratio"
               icon={<RefreshCw size={18} />}
+              accent="accent"
             />
           </div>
 
-          {/* Charts Section */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Revenue Trend (INR)</h3>
+          {/* Revenue Trend Chart */}
+          <div className="report-section">
+            <p className="report-section-title">Revenue Trend (INR)</p>
             <LineChart
               data={data.trend}
               xKey="month_key"
@@ -177,19 +174,19 @@ export default function RevenueReport() {
               secondaryYKey="collected_amount"
               valueFormatter={(val) => formatCurrency(val)}
             />
-            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', justifyContent: 'flex-end', paddingRight: '1rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', justifyContent: 'flex-end', paddingRight: '1rem', marginTop: '0.5rem' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: 'var(--success)', display: 'inline-block' }} /> Invoiced
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: 'var(--success)', display: 'inline-block', boxShadow: '0 0 6px var(--success)' }} /> Invoiced
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: 'var(--info)', display: 'inline-block' }} /> Collected
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: 'var(--info)', display: 'inline-block', boxShadow: '0 0 6px var(--info)' }} /> Collected
               </span>
             </div>
           </div>
 
           {/* Top Clients Table */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Top 5 Clients by Revenue</h3>
+          <div className="report-section">
+            <p className="report-section-title">Top 5 Clients by Revenue</p>
             <ReportTable columns={columns} data={data.top_clients} />
           </div>
         </div>

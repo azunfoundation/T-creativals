@@ -563,6 +563,20 @@ class InvoiceController extends Controller
             return $invoice;
         });
 
+        $reviewer = \App\Models\User::role('finance')->first()
+            ?? \App\Models\User::role('founder')->first();
+        if ($reviewer && $reviewer->id !== $request->user()->id) {
+            \App\Services\NotificationService::alert('invoice_submitted_for_review', [
+                'user_id' => $reviewer->id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'approval_requested',
+                'title' => 'Invoice Review Requested',
+                'body' => "Invoice {$invoice->invoice_number} has been submitted and requires your review.",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id],
+            ]);
+        }
+
         return (new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service'])))
             ->additional(['message' => 'Invoice submitted for review successfully.']);
     }
@@ -593,6 +607,31 @@ class InvoiceController extends Controller
 
             return $invoice;
         });
+
+        $approver = \App\Models\User::role('founder')->first();
+        if ($approver && $approver->id !== $request->user()->id) {
+            \App\Services\NotificationService::alert('invoice_reviewed', [
+                'user_id' => $approver->id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'approval_requested',
+                'title' => 'Invoice Approval Requested',
+                'body' => "Invoice {$invoice->invoice_number} has been reviewed and requires your final approval.",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id],
+            ]);
+        }
+
+        if ($invoice->created_by && $invoice->created_by !== $request->user()->id) {
+            \App\Services\NotificationService::alert('invoice_reviewed_notify_creator', [
+                'user_id' => $invoice->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'invoice_reviewed',
+                'title' => 'Invoice Reviewed',
+                'body' => "Your invoice {$invoice->invoice_number} has been reviewed and is pending final approval.",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id],
+            ]);
+        }
 
         return (new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service'])))
             ->additional(['message' => 'Invoice reviewed and sent for final approval.']);
@@ -659,6 +698,18 @@ class InvoiceController extends Controller
             return $invoice;
         });
 
+        if ($invoice->created_by && $invoice->created_by !== $request->user()->id) {
+            \App\Services\NotificationService::alert('invoice_approved', [
+                'user_id' => $invoice->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'invoice_approved',
+                'title' => 'Invoice Approved',
+                'body' => "Your invoice {$invoice->invoice_number} has been approved.",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id],
+            ]);
+        }
+
         return (new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service'])))
             ->additional(['message' => 'Invoice approved successfully. Project created and client assigned.']);
     }
@@ -699,6 +750,19 @@ class InvoiceController extends Controller
 
             return $invoice;
         });
+
+        if ($invoice->created_by && $invoice->created_by !== $request->user()->id) {
+            $notes = $request->input('notes') ? " Notes: {$request->input('notes')}" : "";
+            \App\Services\NotificationService::alert('invoice_rejected', [
+                'user_id' => $invoice->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'invoice_rejected',
+                'title' => 'Invoice Rejected',
+                'body' => "Your invoice {$invoice->invoice_number} has been rejected.{$notes}",
+                'action_url' => "/invoices/{$invoice->id}",
+                'metadata' => ['invoice_id' => $invoice->id],
+            ]);
+        }
 
         return (new InvoiceResource($invoice->load(['quote', 'client', 'creator', 'currency', 'coupon', 'items.service'])))
             ->additional(['message' => 'Invoice rejected successfully and reverted to draft.']);

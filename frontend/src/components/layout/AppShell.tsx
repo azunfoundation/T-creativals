@@ -16,7 +16,7 @@ import {
 import { cn, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useQuery } from '@tanstack/react-query';
-import { alerts as alertsApi } from '@/lib/api';
+import { alerts as alertsApi, platformSettings as settingsApi, SystemSettings } from '@/lib/api';
 import AlertsDrawer from './AlertsDrawer';
 
 // -- Navigation Groups ---------------------------------------------
@@ -129,6 +129,31 @@ function useBreadcrumbs(pathname: string) {
   }));
 }
 
+const playChime = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const playTone = (time: number, freq: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, time);
+      gain.gain.setValueAtTime(0.2, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(time);
+      osc.stop(time + duration);
+    };
+    const now = ctx.currentTime;
+    playTone(now, 523.25, 0.4);
+    playTone(now + 0.12, 659.25, 0.5);
+  } catch (e) {
+    console.error('Failed to play chime:', e);
+  }
+};
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -166,9 +191,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [logoImageError, setLogoImageError] = useState(false);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
   const quickCreateRef = useRef<HTMLDivElement>(null);
+  const prevUnreadIdsRef = useRef<Set<number>>(new Set());
+  const isFirstLoadRef = useRef(true);
 
   const { data: alerts = [] } = useQuery<any[]>({
     queryKey: ['alerts'],
@@ -180,12 +208,54 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         return Array.isArray(payload) ? payload : [];
       } catch { return []; }
     },
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
-  const unreadCount = alerts.filter((a) => !a.read).length;
+  const unreadAlerts = useMemo(() => alerts.filter((a: any) => !a.read), [alerts]);
+  const unreadIds = useMemo(() => new Set(unreadAlerts.map((a: any) => a.id)), [unreadAlerts]);
+
+  useEffect(() => {
+    if (isFirstLoadRef.current) {
+      if (alerts.length > 0) {
+        prevUnreadIdsRef.current = unreadIds;
+        isFirstLoadRef.current = false;
+      }
+      return;
+    }
+
+    let hasNew = false;
+    for (const id of unreadIds) {
+      if (!prevUnreadIdsRef.current.has(id)) {
+        hasNew = true;
+        break;
+      }
+    }
+
+    if (hasNew) {
+      const soundEnabled = localStorage.getItem('notification_sound_enabled') !== 'false';
+      if (soundEnabled) {
+        playChime();
+      }
+    }
+
+    prevUnreadIdsRef.current = unreadIds;
+  }, [unreadIds, alerts]);
+
+  const unreadCount = unreadAlerts.length;
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+
+  const { data: settings } = useQuery<SystemSettings>({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      const res = await settingsApi.get();
+      return res.data;
+    },
+  });
+
+  useEffect(() => {
+    setLogoImageError(false);
+  }, [settings?.company?.logo_url]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -226,12 +296,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Workspace Header */}
           <div className="sidebar-workspace">
-            <div className="workspace-logo">
-              <Zap size={13} color="#fff" strokeWidth={2.5} />
+            <div className="workspace-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {settings?.company?.logo_url && !logoImageError ? (
+                <img 
+                  src={settings.company.logo_url} 
+                  alt="Logo" 
+                  onError={() => setLogoImageError(true)}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                />
+              ) : (
+                <Zap size={13} color="#fff" strokeWidth={2.5} />
+              )}
             </div>
             {!collapsed && (
               <>
-                <span className="workspace-name">Creativals OS</span>
+                <span className="workspace-name">
+                  {settings?.company?.company_name || 'Creativals OS'}
+                </span>
                 <ChevronDown size={13} className="workspace-chevron" />
               </>
             )}

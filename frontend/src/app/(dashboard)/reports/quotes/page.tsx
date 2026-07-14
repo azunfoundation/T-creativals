@@ -18,13 +18,8 @@ export default function QuoteConversionReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -61,7 +56,7 @@ export default function QuoteConversionReport() {
       label: 'Total Quoted Value',
       align: 'right' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono text-emerald-400 font-medium">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 600 }}>{formatCurrency(Number(val))}</span>,
     },
   ];
 
@@ -108,48 +103,21 @@ export default function QuoteConversionReport() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Total Quotes"
-              value={data.summary.total_quotes}
-              subtext="Draft to Won Quotes"
-              icon={<FileSpreadsheet className="w-5 h-5" />}
-            />
-            <KpiCard
-              title="Win Rate"
-              value={`${data.summary.win_rate_pct}%`}
-              subtext="Won vs Rejected ratio"
-              icon={<Percent className="w-5 h-5 text-emerald-400" />}
-            />
-            <KpiCard
-              title="Won Quotes"
-              value={data.summary.won_count}
-              subtext={`${data.summary.sent_count} Sent to Clients`}
-              icon={<Award className="w-5 h-5 text-amber-400" />}
-            />
-            <KpiCard
-              title="Avg Quote Value"
-              value={formatCurrency(data.summary.avg_quote_value)}
-              subtext="Average Proposal Value"
-              icon={<Coins className="w-5 h-5" />}
-            />
-            <KpiCard
-              title="Total Quote Value"
-              value={formatCurrency(data.summary.total_quote_value)}
-              subtext="Active Pipeline (Approved+)"
-              icon={<Layers className="w-5 h-5 text-sky-400" />}
-            />
+            <KpiCard title="Total Quotes" value={data.summary.total_quotes} subtext="Draft to Won Quotes" icon={<FileSpreadsheet size={18} />} accent="muted" />
+            <KpiCard title="Win Rate" value={`${data.summary.win_rate_pct}%`} subtext="Won vs Rejected ratio" icon={<Percent size={18} />} accent="success" />
+            <KpiCard title="Won Quotes" value={data.summary.won_count} subtext={`${data.summary.sent_count} Sent to Clients`} icon={<Award size={18} />} accent="warning" />
+            <KpiCard title="Avg Quote Value" value={formatCurrency(data.summary.avg_quote_value)} subtext="Average Proposal Value" icon={<Coins size={18} />} accent="info" />
+            <KpiCard title="Total Quote Value" value={formatCurrency(data.summary.total_quote_value)} subtext="Active Pipeline (Approved+)" icon={<Layers size={18} />} accent="accent" />
           </div>
 
+          {/* Charts Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
-            {/* Left Panel: Funnel Chart */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Conversion Funnel</h3>
-              <FunnelChart data={data.funnel} />
-            </div>
+            {/* Funnel — no extra wrapper since FunnelChart already uses report-section */}
+            <FunnelChart data={data.funnel} />
 
-            {/* Right Panel: Top Quoted Services */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Top Quoted Services</h3>
+            {/* Top Services */}
+            <div className="report-section">
+              <p className="report-section-title">Top Quoted Services</p>
               <ReportTable columns={columns} data={data.top_services} />
             </div>
           </div>

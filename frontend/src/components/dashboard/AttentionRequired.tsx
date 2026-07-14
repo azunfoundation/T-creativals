@@ -25,6 +25,7 @@ interface TaskItem {
   assignee?: {
     name?: string;
   };
+  assignee_name?: string;
 }
 
 interface ProjectItem {
@@ -97,7 +98,7 @@ export default function AttentionRequired({ attentionData }: AttentionRequiredPr
       type: 'task',
       title: tsk.title || 'Untitled Task',
       subtitle: tsk.project?.name ? `Project: ${tsk.project.name}` : 'No Project',
-      value: tsk.assignee?.name ? `Assignee: ${tsk.assignee.name}` : 'Unassigned',
+      value: (tsk.assignee?.name || tsk.assignee_name) ? `Assignee: ${tsk.assignee?.name || tsk.assignee_name}` : 'Unassigned',
       metaText: tsk.due_date ? `Due: ${formatDate(tsk.due_date)}` : 'No due date',
       color: 'var(--warning)',
       route: `/tasks`

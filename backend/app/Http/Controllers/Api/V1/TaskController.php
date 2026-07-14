@@ -84,6 +84,8 @@ class TaskController extends Controller
             'estimated_hours' => 'nullable|numeric|min:0',
             'completion_percentage' => 'nullable|integer|min:0|max:100',
             'sort_order' => 'nullable|integer',
+            'tags' => 'nullable|array',
+            'tags.*' => 'string|max:50',
         ]);
 
         $validated['created_by'] = $request->user()->id;
@@ -92,6 +94,16 @@ class TaskController extends Controller
         $task->load(['project', 'assignee', 'milestone']);
 
         if ($task->assigned_to && $task->assignee) {
+            \App\Services\NotificationService::alert('task_assigned', [
+                'user_id' => $task->assigned_to,
+                'triggered_by' => $request->user()->id,
+                'type' => 'task_assigned',
+                'title' => 'New Task Assigned',
+                'body' => "You have been assigned to task: {$task->title}.",
+                'action_url' => "/tasks",
+                'metadata' => ['task_id' => $task->id],
+            ]);
+
             $pref = NotificationPreference::where('user_id', $task->assigned_to)
                 ->where('event_type', 'task_assigned')
                 ->first();
@@ -142,6 +154,8 @@ class TaskController extends Controller
                 'estimated_hours' => 'nullable|numeric|min:0',
                 'completion_percentage' => 'nullable|integer|min:0|max:100',
                 'sort_order' => 'nullable|integer',
+                'tags' => 'nullable|array',
+                'tags.*' => 'string|max:50',
             ]);
         } else {
             // Assigned user can only update status/completion
@@ -157,6 +171,16 @@ class TaskController extends Controller
         $task->load(['project', 'assignee', 'milestone']);
 
         if ($task->assigned_to && $task->assigned_to !== $originalAssigneeId && $task->assignee) {
+            \App\Services\NotificationService::alert('task_assigned', [
+                'user_id' => $task->assigned_to,
+                'triggered_by' => $request->user()->id,
+                'type' => 'task_assigned',
+                'title' => 'New Task Assigned',
+                'body' => "You have been assigned to task: {$task->title}.",
+                'action_url' => "/tasks",
+                'metadata' => ['task_id' => $task->id],
+            ]);
+
             $pref = NotificationPreference::where('user_id', $task->assigned_to)
                 ->where('event_type', 'task_assigned')
                 ->first();
@@ -195,8 +219,42 @@ class TaskController extends Controller
             'status' => 'required|string|in:todo,in_progress,review,blocked,done,cancelled',
         ]);
 
+        $oldStatus = $task->status;
         $task->update($validated);
         $task->load(['project', 'assignee', 'milestone']);
+
+        if ($task->status !== $oldStatus) {
+            $triggeredBy = $request->user()->id;
+            $statusLabels = [
+                'todo' => 'To Do',
+                'in_progress' => 'In Progress',
+                'review' => 'Review',
+                'blocked' => 'Blocked',
+                'done' => 'Done',
+                'cancelled' => 'Cancelled'
+            ];
+            $statusLabel = $statusLabels[$task->status] ?? $task->status;
+
+            $usersToAlert = array_filter(array_unique([
+                $task->created_by,
+                $task->project?->manager_id,
+                $task->assigned_to
+            ]));
+
+            foreach ($usersToAlert as $userId) {
+                if ($userId !== $triggeredBy) {
+                    \App\Services\NotificationService::alert('task_status_changed', [
+                        'user_id' => $userId,
+                        'triggered_by' => $triggeredBy,
+                        'type' => 'task_status_changed',
+                        'title' => 'Task Status Changed',
+                        'body' => "Task \"{$task->title}\" status updated to {$statusLabel}.",
+                        'action_url' => "/tasks",
+                        'metadata' => ['task_id' => $task->id, 'status' => $task->status],
+                    ]);
+                }
+            }
+        }
 
         return (new TaskResource($task))->response();
     }
@@ -212,8 +270,42 @@ class TaskController extends Controller
             'completion_percentage' => 'required|integer|min:0|max:100',
         ]);
 
+        $oldStatus = $task->status;
         $task->update($validated);
         $task->load(['project', 'assignee', 'milestone']);
+
+        if ($task->status !== $oldStatus) {
+            $triggeredBy = $request->user()->id;
+            $statusLabels = [
+                'todo' => 'To Do',
+                'in_progress' => 'In Progress',
+                'review' => 'Review',
+                'blocked' => 'Blocked',
+                'done' => 'Done',
+                'cancelled' => 'Cancelled'
+            ];
+            $statusLabel = $statusLabels[$task->status] ?? $task->status;
+
+            $usersToAlert = array_filter(array_unique([
+                $task->created_by,
+                $task->project?->manager_id,
+                $task->assigned_to
+            ]));
+
+            foreach ($usersToAlert as $userId) {
+                if ($userId !== $triggeredBy) {
+                    \App\Services\NotificationService::alert('task_status_changed', [
+                        'user_id' => $userId,
+                        'triggered_by' => $triggeredBy,
+                        'type' => 'task_status_changed',
+                        'title' => 'Task Status Changed',
+                        'body' => "Task \"{$task->title}\" status updated to {$statusLabel}.",
+                        'action_url' => "/tasks",
+                        'metadata' => ['task_id' => $task->id, 'status' => $task->status],
+                    ]);
+                }
+            }
+        }
 
         return (new TaskResource($task))->response();
     }
@@ -237,6 +329,50 @@ class TaskController extends Controller
         ]);
 
         $comment->load('user');
+
+        $commentText = $validated['comment'];
+        $triggeredBy = $request->user()->id;
+
+        preg_match_all('/@([a-zA-Z0-9_\-\.]+)/', $commentText, $matches);
+        $mentionedNames = array_unique($matches[1] ?? []);
+        $notifiedUserIds = [];
+
+        foreach ($mentionedNames as $name) {
+            $mentionedUser = \App\Models\User::where('name', 'like', "%{$name}%")->first();
+            if ($mentionedUser && $mentionedUser->id !== $triggeredBy) {
+                \App\Services\NotificationService::alert('mention', [
+                    'user_id' => $mentionedUser->id,
+                    'triggered_by' => $triggeredBy,
+                    'type' => 'mention',
+                    'title' => 'You were mentioned',
+                    'body' => "{$request->user()->name} mentioned you in a comment on task: {$task->title}.",
+                    'action_url' => "/tasks",
+                    'metadata' => ['task_id' => $task->id, 'comment_id' => $comment->id],
+                ]);
+                $notifiedUserIds[] = $mentionedUser->id;
+            }
+        }
+
+        $usersToAlert = array_filter(array_unique([
+            $task->assigned_to,
+            $task->created_by,
+            $task->project?->manager_id
+        ]));
+
+        foreach ($usersToAlert as $userId) {
+            if ($userId !== $triggeredBy && !in_array($userId, $notifiedUserIds, true)) {
+                \App\Services\NotificationService::alert('task_commented', [
+                    'user_id' => $userId,
+                    'triggered_by' => $triggeredBy,
+                    'type' => 'task_commented',
+                    'title' => 'New Comment on Task',
+                    'body' => "{$request->user()->name} commented on: {$task->title}.",
+                    'action_url' => "/tasks",
+                    'metadata' => ['task_id' => $task->id, 'comment_id' => $comment->id],
+                ]);
+            }
+        }
+
         return response()->json([
             'data' => [
                 'id' => $comment->id,
@@ -298,6 +434,95 @@ class TaskController extends Controller
 
         $timesheet->load(['user', 'task', 'project']);
         return (new \App\Http\Resources\TimesheetResource($timesheet))->response()->setStatusCode(201);
+    }
+
+    /**
+     * Start (or resume) the task timer.
+     */
+    public function startTimer(Request $request, Task $task): JsonResponse
+    {
+        Gate::authorize('update', $task);
+
+        if (! $task->timer_started_at) {
+            $updates = ['timer_started_at' => now()];
+            if ($task->status === 'todo') {
+                $updates['status'] = 'in_progress';
+            }
+            $task->update($updates);
+        }
+
+        $task->load(['project', 'assignee', 'milestone']);
+        return (new TaskResource($task))->response();
+    }
+
+    /**
+     * Pause the task timer, banking the elapsed seconds.
+     */
+    public function pauseTimer(Request $request, Task $task): JsonResponse
+    {
+        Gate::authorize('update', $task);
+
+        if ($task->timer_started_at) {
+            $task->update([
+                'timer_accumulated_seconds' => $task->timer_accumulated_seconds + $this->timerElapsedSeconds($task),
+                'timer_started_at' => null,
+            ]);
+        }
+
+        $task->load(['project', 'assignee', 'milestone']);
+        return (new TaskResource($task))->response();
+    }
+
+    /**
+     * Stop the task timer and log the tracked time as a timesheet entry.
+     */
+    public function stopTimer(Request $request, Task $task): JsonResponse
+    {
+        Gate::authorize('update', $task);
+
+        $totalSeconds = $task->timer_accumulated_seconds + $this->timerElapsedSeconds($task);
+
+        // Timesheet hours_logged has a 0.01h floor — skip logging anything under 36 seconds.
+        if ($totalSeconds >= 36) {
+            Gate::authorize('create', Timesheet::class);
+            Timesheet::create([
+                'user_id' => $request->user()->id,
+                'task_id' => $task->id,
+                'project_id' => $task->project_id,
+                'date' => now()->toDateString(),
+                'hours_logged' => min(round($totalSeconds / 3600, 2), 24),
+                'description' => 'Tracked via task timer',
+                'is_billable' => true,
+                'status' => 'draft',
+            ]);
+        }
+
+        $task->update(['timer_started_at' => null, 'timer_accumulated_seconds' => 0]);
+
+        $task->load(['project', 'assignee', 'milestone']);
+        return (new TaskResource($task))->response();
+    }
+
+    /**
+     * Reset the task timer without logging any time.
+     */
+    public function resetTimer(Request $request, Task $task): JsonResponse
+    {
+        Gate::authorize('update', $task);
+
+        $task->update(['timer_started_at' => null, 'timer_accumulated_seconds' => 0]);
+
+        $task->load(['project', 'assignee', 'milestone']);
+        return (new TaskResource($task))->response();
+    }
+
+    private function timerElapsedSeconds(Task $task): int
+    {
+        if (! $task->timer_started_at) {
+            return 0;
+        }
+
+        return max(0, (int) $task->timer_started_at->diffInSeconds(now()));
     }
 
     /**

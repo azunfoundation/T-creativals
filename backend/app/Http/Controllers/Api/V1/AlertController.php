@@ -12,17 +12,63 @@ use Illuminate\Http\Request;
 class AlertController extends Controller
 {
     /**
-     * Display a listing of the unread alerts.
+     * Display a listing of alerts.
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage = $request->integer('per_page', 15);
-        
-        $alerts = Alert::where('user_id', $request->user()->id)
-            ->where('is_read', false)
+        $perPage = $request->integer('per_page', 50);
+        $filter = $request->str('filter', 'all')->toString();
+        $search = $request->str('search', '')->toString();
+
+        $query = Alert::where('user_id', $request->user()->id)
             ->with('triggerer')
-            ->latest()
-            ->paginate($perPage);
+            ->latest();
+
+        // Apply filters
+        if ($filter === 'unread') {
+            $query->where('is_read', false);
+        } elseif ($filter === 'mentions') {
+            $query->where('type', 'mention');
+        } elseif ($filter === 'tasks') {
+            $query->where(function ($q) {
+                $q->where('type', 'like', 'task_%')
+                  ->orWhere('type', 'task');
+            });
+        } elseif ($filter === 'projects') {
+            $query->where('type', 'like', 'project_%');
+        } elseif ($filter === 'crm') {
+            $query->where(function ($q) {
+                $q->where('type', 'like', 'lead_%')
+                  ->orWhere('type', 'like', 'crm_%');
+            });
+        } elseif ($filter === 'invoices') {
+            $query->where(function ($q) {
+                $q->where('type', 'like', 'invoice_%')
+                  ->orWhere('type', 'payment_received');
+            });
+        } elseif ($filter === 'quotes') {
+            $query->where('type', 'like', 'quote_%');
+        } elseif ($filter === 'approvals') {
+            $query->where(function ($q) {
+                $q->where('type', 'like', '%_approval_%')
+                  ->orWhere('type', 'like', '%_approved')
+                  ->orWhere('type', 'like', '%_rejected')
+                  ->orWhere('type', 'approval_requested')
+                  ->orWhere('type', 'approval_actioned');
+            });
+        } elseif ($filter === 'system') {
+            $query->where('type', 'system');
+        }
+
+        // Apply search if present
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('body', 'like', "%{$search}%");
+            });
+        }
+
+        $alerts = $query->paginate($perPage);
 
         return response()->json([
             'data' => $alerts->items(),
@@ -69,6 +115,36 @@ class AlertController extends Controller
 
         return response()->json([
             'message' => 'All alerts marked as read.',
+        ]);
+    }
+
+    /**
+     * Delete a single alert.
+     */
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        /** @var Alert $alert */
+        $alert = Alert::where('user_id', $request->user()->id)
+            ->findOrFail($id);
+
+        $alert->delete();
+
+        return response()->json([
+            'message' => 'Alert deleted successfully.',
+        ]);
+    }
+
+    /**
+     * Delete all read alerts.
+     */
+    public function destroyRead(Request $request): JsonResponse
+    {
+        Alert::where('user_id', $request->user()->id)
+            ->where('is_read', true)
+            ->delete();
+
+        return response()->json([
+            'message' => 'All read alerts deleted.',
         ]);
     }
 }

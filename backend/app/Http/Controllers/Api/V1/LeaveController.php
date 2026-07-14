@@ -105,6 +105,18 @@ class LeaveController extends Controller
             }
         }
 
+        if ($leaveRequest->user_id) {
+            \App\Services\NotificationService::alert('leave_approved', [
+                'user_id' => $leaveRequest->user_id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'leave_approved',
+                'title' => 'Leave Request Approved',
+                'body' => "Your leave request from {$leaveRequest->start_date} to {$leaveRequest->end_date} has been approved.",
+                'action_url' => "/attendance",
+                'metadata' => ['leave_request_id' => $leaveRequest->id],
+            ]);
+        }
+
         return response()->json(['data' => $leaveRequest->fresh()->load(['leaveType', 'user', 'approver'])]);
     }
 
@@ -113,6 +125,20 @@ class LeaveController extends Controller
         Gate::authorize('approve', LeaveRequest::class);
         $validated = $request->validate(['rejection_reason' => ['nullable', 'string', 'max:500']]);
         $leaveRequest->update(['status' => 'rejected', 'approved_by' => $request->user()->id, 'rejection_reason' => $validated['rejection_reason'] ?? null]);
+
+        if ($leaveRequest->user_id) {
+            $reason = !empty($validated['rejection_reason']) ? " Reason: {$validated['rejection_reason']}" : "";
+            \App\Services\NotificationService::alert('leave_rejected', [
+                'user_id' => $leaveRequest->user_id,
+                'triggered_by' => $request->user()->id,
+                'type' => 'leave_rejected',
+                'title' => 'Leave Request Rejected',
+                'body' => "Your leave request from {$leaveRequest->start_date} to {$leaveRequest->end_date} has been rejected.{$reason}",
+                'action_url' => "/attendance",
+                'metadata' => ['leave_request_id' => $leaveRequest->id],
+            ]);
+        }
+
         return response()->json(['data' => $leaveRequest->fresh()->load(['leaveType', 'user'])]);
     }
 

@@ -203,6 +203,18 @@ class ExpenseController extends Controller
             'approved_by' => $request->user()->id,
         ]);
 
+        if ($expense->created_by) {
+            \App\Services\NotificationService::alert('expense_approved', [
+                'user_id' => $expense->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'expense_approved',
+                'title' => 'Expense Approved',
+                'body' => "Your expense of " . ($expense->currency?->code ?? '') . " {$expense->amount} has been approved.",
+                'action_url' => "/expenses",
+                'metadata' => ['expense_id' => $expense->id],
+            ]);
+        }
+
         return response()->json([
             'message' => 'Expense approved successfully.',
             'expense' => $expense->load(['category', 'project', 'vendor', 'approver'])
@@ -230,6 +242,19 @@ class ExpenseController extends Controller
             'approved_by'      => $request->user()->id,
             'rejection_reason' => $validated['rejection_reason'] ?? null,
         ]);
+
+        if ($expense->created_by) {
+            $reason = !empty($validated['rejection_reason']) ? " Reason: {$validated['rejection_reason']}" : "";
+            \App\Services\NotificationService::alert('expense_rejected', [
+                'user_id' => $expense->created_by,
+                'triggered_by' => $request->user()->id,
+                'type' => 'expense_rejected',
+                'title' => 'Expense Rejected',
+                'body' => "Your expense of " . ($expense->currency?->code ?? '') . " {$expense->amount} has been rejected.{$reason}",
+                'action_url' => "/expenses",
+                'metadata' => ['expense_id' => $expense->id],
+            ]);
+        }
 
         return response()->json([
             'message' => 'Expense rejected.',
@@ -259,9 +284,33 @@ class ExpenseController extends Controller
             'rejection_reason' => null,
         ]);
 
+        $expense->load(['category', 'project', 'vendor', 'submitter', 'approver', 'currency', 'attachments']);
+
+        $approverId = null;
+        if ($expense->project && $expense->project->manager_id) {
+            $approverId = $expense->project->manager_id;
+        } else {
+            $founder = \App\Models\User::role('founder')->first();
+            if ($founder) {
+                $approverId = $founder->id;
+            }
+        }
+
+        if ($approverId) {
+            \App\Services\NotificationService::alert('expense_submitted', [
+                'user_id' => $approverId,
+                'triggered_by' => $expense->created_by ?: $request->user()->id,
+                'type' => 'approval_requested',
+                'title' => 'Expense Submitted',
+                'body' => ($expense->submitter?->name ?? 'A team member') . " submitted an expense for approval (" . ($expense->currency?->code ?? '') . " {$expense->amount}).",
+                'action_url' => "/expenses",
+                'metadata' => ['expense_id' => $expense->id],
+            ]);
+        }
+
         return response()->json([
             'message' => 'Expense submitted for approval.',
-            'expense' => $expense->load(['category', 'project', 'vendor', 'submitter', 'approver', 'currency', 'attachments']),
+            'expense' => $expense,
         ]);
     }
 

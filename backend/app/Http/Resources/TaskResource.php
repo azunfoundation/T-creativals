@@ -28,6 +28,9 @@ class TaskResource extends JsonResource
             'actual_hours' => $this->actual_hours,
             'completion_percentage' => $this->completion_percentage,
             'sort_order' => $this->sort_order,
+            'tags' => $this->tags ?? [],
+            'timer_started_at' => $this->timer_started_at?->toIso8601String(),
+            'timer_accumulated_seconds' => $this->timer_accumulated_seconds ?? 0,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             

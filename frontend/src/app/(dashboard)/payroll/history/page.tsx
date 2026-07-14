@@ -47,9 +47,8 @@ export default function MyPayslipsPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (err) {
-      console.error('Failed to download payslip', err);
-      showToast('Failed to download payslip', 'error');
+    } catch {
+      showToast('Failed to download payslip. Please try again.', 'error');
     }
   };
 

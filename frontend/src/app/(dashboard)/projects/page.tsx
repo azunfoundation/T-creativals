@@ -9,7 +9,9 @@ import {
   Plus, Search, LayoutGrid, List, Filter, X,
   Calendar, DollarSign, UserCheck, Briefcase,
   ArrowUpDown, ExternalLink, Check, Trash2, Clock,
-  ArrowRight, Users, CheckCircle2, AlertCircle
+  ArrowRight, Users, CheckCircle2, AlertCircle,
+  Rocket, TrendingUp, FolderOpen, PieChart, Info,
+  MoreVertical
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -66,6 +68,25 @@ const STATUS_CONFIG = {
   on_hold: { label: 'On Hold', color: 'var(--warning)', bg: 'var(--warning-subtle)', borderLeft: 'border-l-orange-500' },
   completed: { label: 'Completed', color: 'var(--success)', bg: 'var(--success-subtle)', borderLeft: 'border-l-green-500' },
   cancelled: { label: 'Cancelled', color: 'var(--danger)', bg: 'var(--danger-subtle)', borderLeft: 'border-l-red-500' }
+};
+
+const getAvatarStyle = (name: string) => {
+  if (!name || name === 'Unassigned') {
+    return { background: 'var(--text-muted)', color: '#ffffff' };
+  }
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colors = [
+    'linear-gradient(135deg, #7c3aed, #a855f7)', // Purple
+    'linear-gradient(135deg, #3b82f6, #60a5fa)', // Blue
+    'linear-gradient(135deg, #06b6d4, #22d3ee)', // Cyan
+    'linear-gradient(135deg, #10b981, #34d399)', // Green
+    'linear-gradient(135deg, #ec4899, #f472b6)', // Pink
+  ];
+  const index = Math.abs(hash) % colors.length;
+  return { background: colors[index], color: '#ffffff' };
 };
 
 export default function ProjectsPage() {
@@ -279,30 +300,191 @@ export default function ProjectsPage() {
   const completedCount = projectsData.filter(p => p.status === 'completed').length;
   const totalBudgetVal = projectsData.reduce((sum, p) => sum + (p.budget || 0), 0);
 
+  // Bottom focus strip calculations
+  const todayStr = new Date().toISOString().split('T')[0];
+  const overdueProjectsCount = projectsData.filter(p => {
+    return p.end_date && p.end_date < todayStr && p.status !== 'completed' && p.status !== 'cancelled';
+  }).length;
+
+  const dueThisWeekCount = projectsData.filter(p => {
+    if (!p.end_date || p.status === 'completed' || p.status === 'cancelled') return false;
+    const dueDate = new Date(p.end_date);
+    const today = new Date();
+    dueDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffTime = dueDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 7;
+  }).length;
+
+  const notStartedCount = projectsData.filter(p => p.status === 'planning').length;
+  const avgBudgetVal = totalProjectsCount > 0 ? (totalBudgetVal / totalProjectsCount) : 0;
+
   return (
     <div style={{ maxWidth: '100%', margin: '0 auto' }}>
       
       {/* ── Metrics Row ── */}
       <div className="kpi-grid kpi-grid-4" style={{ marginBottom: '1.5rem', gap: '0.75rem' }}>
-        <div className="kpi-card">
-          <span className="kpi-label">Total Projects</span>
-          <div className="kpi-value">{totalProjectsCount}</div>
-          <span className="kpi-trend flat">All Projects</span>
+        {/* KPI 1: TOTAL PROJECTS */}
+        <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Briefcase size={18} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TOTAL PROJECTS</span>
+                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem' }}>{totalProjectsCount}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>All Projects</span>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <svg width="100" height="40" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="sparkline-purple" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M 0 30 Q 15 25, 30 35 T 60 15 T 80 10 T 100 18"
+                  fill="none"
+                  stroke="#7c3aed"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M 0 30 Q 15 25, 30 35 T 60 15 T 80 10 T 100 18 L 100 40 L 0 40 Z"
+                  fill="url(#sparkline-purple)"
+                />
+              </svg>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              <ArrowRight size={12} style={{ transform: 'rotate(-45deg)' }} /> 12.5%
+            </span>
+            <span>from last month</span>
+          </div>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Active Projects</span>
-          <div className="kpi-value" style={{ color: 'var(--accent)' }}>{activeCount}</div>
-          <span className="kpi-trend up" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>Ongoing</span>
+
+        {/* KPI 2: ACTIVE PROJECTS */}
+        <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Rocket size={18} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ACTIVE PROJECTS</span>
+                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem', color: 'var(--accent)' }}>{activeCount}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ongoing</span>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <svg width="100" height="40" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
+                <path
+                  d="M 0 30 L 100 30"
+                  fill="none"
+                  stroke="#7c3aed"
+                  strokeWidth="2"
+                  strokeDasharray="4 2"
+                  strokeLinecap="round"
+                />
+                <circle cx="10" cy="30" r="3" fill="#7c3aed" />
+                <circle cx="50" cy="30" r="3" fill="#7c3aed" />
+                <circle cx="90" cy="30" r="3" fill="#7c3aed" />
+              </svg>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
+              — 0%
+            </span>
+            <span>from last month</span>
+          </div>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Completed Projects</span>
-          <div className="kpi-value" style={{ color: 'var(--success)' }}>{completedCount}</div>
-          <span className="kpi-trend up">{completedCount} Delivered</span>
+
+        {/* KPI 3: COMPLETED PROJECTS */}
+        <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Check size={18} style={{ color: 'var(--success)' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>COMPLETED PROJECTS</span>
+                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem', color: 'var(--success)' }}>{completedCount}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Delivered</span>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <svg width="100" height="40" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
+                <path
+                  d="M 0 30 L 100 30"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="2"
+                  strokeDasharray="4 2"
+                  strokeLinecap="round"
+                />
+                <circle cx="10" cy="30" r="3" fill="#10b981" />
+                <circle cx="50" cy="30" r="3" fill="#10b981" />
+                <circle cx="90" cy="30" r="3" fill="#10b981" />
+              </svg>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
+              — 0%
+            </span>
+            <span>from last month</span>
+          </div>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Total Budget</span>
-          <div className="kpi-value" style={{ color: 'var(--text-primary)' }}>{formatCurrency(totalBudgetVal)}</div>
-          <span className="kpi-trend flat">Portfolio Value</span>
+
+        {/* KPI 4: TOTAL BUDGET */}
+        <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--warning-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--warning)' }}>₹</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TOTAL BUDGET</span>
+                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem' }}>{formatCurrency(totalBudgetVal)}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Portfolio Value</span>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <svg width="100" height="40" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="sparkline-orange" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M 0 35 Q 20 30, 40 10 T 80 20 T 100 8"
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M 0 35 Q 20 30, 40 10 T 80 20 T 100 8 L 100 40 L 0 40 Z"
+                  fill="url(#sparkline-orange)"
+                />
+              </svg>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              <ArrowRight size={12} style={{ transform: 'rotate(-45deg)' }} /> 8.3%
+            </span>
+            <span>from last month</span>
+          </div>
         </div>
       </div>
 
@@ -326,15 +508,19 @@ export default function ProjectsPage() {
           <HowToUseGuide moduleKey="projects" title="How Projects Work" content={PROJECTS_HOWTO} />
 
           {/* View Toggle */}
-          <div style={{ background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', padding: '3px', display: 'flex', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', padding: '3px', display: 'flex', border: '1px solid var(--border)', gap: '4px' }}>
             <button
               onClick={() => setViewMode('table')}
               className="btn btn-sm"
               style={{
                 background: viewMode === 'table' ? 'var(--surface)' : 'transparent',
-                color: viewMode === 'table' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: viewMode === 'table' ? '1px solid var(--accent)' : '1px solid transparent',
+                color: viewMode === 'table' ? 'var(--accent)' : 'var(--text-secondary)',
                 padding: '0.375rem 0.625rem',
-                borderRadius: 'var(--radius-sm)'
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                fontWeight: 500
               }}
             >
               <List size={14} style={{ marginRight: '4px' }} />
@@ -345,9 +531,13 @@ export default function ProjectsPage() {
               className="btn btn-sm"
               style={{
                 background: viewMode === 'board' ? 'var(--surface)' : 'transparent',
-                color: viewMode === 'board' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: viewMode === 'board' ? '1px solid var(--accent)' : '1px solid transparent',
+                color: viewMode === 'board' ? 'var(--accent)' : 'var(--text-secondary)',
                 padding: '0.375rem 0.625rem',
-                borderRadius: 'var(--radius-sm)'
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                fontWeight: 500
               }}
             >
               <LayoutGrid size={14} style={{ marginRight: '4px' }} />
@@ -358,6 +548,7 @@ export default function ProjectsPage() {
           <button
             onClick={() => setShowDrawer(true)}
             className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
           >
             <Plus size={16} /> New Project
           </button>
@@ -376,11 +567,10 @@ export default function ProjectsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input"
-              style={{ paddingLeft: '2.25rem', height: '38px', fontSize: '0.875rem' }}
+              style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem', height: '38px', fontSize: '0.875rem' }}
             />
+            <Filter size={15} style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           </div>
-
-          <Filter size={15} style={{ color: 'var(--text-muted)' }} />
 
           {/* Status Filter */}
           <select
@@ -467,9 +657,20 @@ export default function ProjectsPage() {
               <tbody>
                 {filteredProjects.map((project) => {
                   const status = STATUS_CONFIG[project.status] || STATUS_CONFIG.planning;
+                  const leftBorderColor = status.color || 'var(--accent)';
+                  const managerName = project.manager?.name || 'Unassigned';
+                  const avatarStyle = getAvatarStyle(managerName);
+
                   return (
                     <tr key={project.id}>
-                      <td style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      <td style={{
+                        fontWeight: 600,
+                        fontSize: '0.8125rem',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'monospace',
+                        borderLeft: `4px solid ${leftBorderColor}`,
+                        paddingLeft: '1.25rem'
+                      }}>
                         {project.project_number || `PRJ-${project.id.toString().padStart(3, '0')}`}
                       </td>
                       <td style={{ fontWeight: 600 }}>
@@ -483,23 +684,21 @@ export default function ProjectsPage() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <div className="avatar avatar-sm">
-                            {getInitials(project.manager?.name || 'Unassigned')}
+                          <div className="avatar avatar-sm" style={avatarStyle}>
+                            {getInitials(managerName)}
                           </div>
-                          <span style={{ fontSize: '0.875rem' }}>{project.manager?.name || 'Unassigned'}</span>
+                          <span style={{ fontSize: '0.875rem' }}>{managerName}</span>
                         </div>
                       </td>
                       <td>
-                        <span className="badge" style={{ backgroundColor: status.bg, color: status.color }}>
+                        <span className="badge" style={{ backgroundColor: status.bg, color: status.color, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 600 }}>
                           {status.label}
                         </span>
                       </td>
-                      <td style={{ width: '130px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
-                            <span>{project.completion_percentage}%</span>
-                          </div>
-                          <div style={{ height: '6px', background: 'var(--surface-elevated)', borderRadius: '999px', overflow: 'hidden' }}>
+                      <td style={{ width: '150px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 600, minWidth: '32px' }}>{project.completion_percentage}%</span>
+                          <div style={{ flex: 1, height: '6px', background: 'var(--surface-elevated)', borderRadius: '999px', overflow: 'hidden' }}>
                             <div style={{
                               height: '100%',
                               width: `${project.completion_percentage}%`,
@@ -509,24 +708,30 @@ export default function ProjectsPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        <div>S: {formatDate(project.start_date)}</div>
-                        <div style={{ marginTop: '2px' }}>E: {formatDate(project.end_date)}</div>
+                      <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', minWidth: '150px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <Calendar size={12} style={{ color: 'var(--text-muted)' }} />
+                          <span>Start: {formatDate(project.start_date)}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '4px' }}>
+                          <Calendar size={12} style={{ color: 'var(--text-muted)' }} />
+                          <span>End: {formatDate(project.end_date)}</span>
+                        </div>
                       </td>
-                      <td style={{ fontWeight: 500, fontFamily: 'monospace' }}>
+                      <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
                         {formatCurrency(project.budget || 0)}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                          <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.375rem' }}>
-                            View Detail
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}>
+                            View Details
                           </Link>
                           <button
                             onClick={async () => { if (await confirm({ message: 'Are you sure you want to delete this project?', variant: 'danger' })) deleteProjectMutation.mutate(project.id); }}
-                            className="btn btn-danger btn-sm btn-icon"
-                            style={{ padding: '0.375rem' }}
+                            className="btn btn-secondary btn-sm btn-icon"
+                            style={{ padding: '0.375rem', border: 'none', background: 'transparent', color: 'var(--text-secondary)' }}
                           >
-                            <Trash2 size={14} />
+                            <MoreVertical size={16} />
                           </button>
                         </div>
                       </td>
@@ -641,6 +846,67 @@ export default function ProjectsPage() {
           })}
         </div>
       )}
+
+      {/* ── Bottom Focus Stats Strip ── */}
+      <div className="dash-focus-strip" style={{ marginTop: '2rem', padding: '1rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <Briefcase size={18} />
+          </div>
+          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{overdueProjectsCount}</span>
+            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Overdue Projects</span>
+          </div>
+        </div>
+
+        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+
+        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <Clock size={18} />
+          </div>
+          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{dueThisWeekCount}</span>
+            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Due This Week</span>
+          </div>
+        </div>
+
+        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+
+        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <FolderOpen size={18} />
+          </div>
+          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{notStartedCount}</span>
+            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Not Started</span>
+          </div>
+        </div>
+
+        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+
+        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <PieChart size={18} />
+          </div>
+          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(totalBudgetVal)}</span>
+            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Total Budget</span>
+          </div>
+        </div>
+
+        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+
+        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <TrendingUp size={18} />
+          </div>
+          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(avgBudgetVal)}</span>
+            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Avg. Project Budget</span>
+          </div>
+        </div>
+      </div>
 
       {/* ── Create Project Slide-over Drawer ── */}
       {showDrawer && (

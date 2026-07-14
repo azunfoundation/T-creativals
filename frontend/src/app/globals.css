@@ -99,92 +99,101 @@
    RESET & BASE
    ============================================================ */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  /* Tailwind border-* utilities only set border-width; they rely on
-     preflight's solid/0 defaults, which we replicate here. */
-  border-width: 0;
-  border-style: solid;
-}
+/* Element-level defaults live in `@layer base` — the same cascade layer as
+   Tailwind's preflight (which they follow and therefore override) — so that
+   Tailwind utility classes rank ABOVE them. An unlayered `* { margin: 0 }`
+   would silently defeat every layered utility (mx-auto, p-*, etc.) because
+   unlayered author styles beat layered ones before specificity is compared.
+   Keep element selectors in here; class-based design-system rules stay
+   unlayered below. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* Tailwind border-* utilities only set border-width; they rely on
+       preflight's solid/0 defaults, which we replicate here. */
+    border-width: 0;
+    border-style: solid;
+  }
 
-html {
-  height: 100%;
-  -webkit-text-size-adjust: 100%;
-}
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--background);
-  color: var(--text-primary);
-  height: 100%;
-  line-height: 1.5;
-  transition: background-color var(--transition-slow), color var(--transition-slow);
-}
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--background);
+    color: var(--text-primary);
+    height: 100%;
+    line-height: 1.5;
+    transition: background-color var(--transition-slow), color var(--transition-slow);
+  }
 
-#__next,
-[data-nextjs-root-layout] {
-  height: 100%;
-}
+  #__next,
+  [data-nextjs-root-layout] {
+    height: 100%;
+  }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 
-button {
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-}
+  button {
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: inherit;
+  }
 
-input,
-textarea,
-select {
-  font-family: inherit;
-}
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
 
-/* ============================================================
-   SCROLLBAR STYLING
-   ============================================================ */
+  /* ============================================================
+     SCROLLBAR STYLING
+     ============================================================ */
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 9999px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
 
-/* ============================================================
-   TYPOGRAPHY
-   ============================================================ */
+  /* ============================================================
+     TYPOGRAPHY
+     ============================================================ */
 
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--text-primary);
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+  }
 }
 
 .text-xs  { font-size: 0.75rem; line-height: 1rem; }
@@ -746,6 +755,114 @@ h1, h2, h3, h4, h5, h6 {
 .kpi-trend.flat { background: var(--surface-elevated); color: var(--text-muted); }
 
 /* ============================================================
+   REPORT DESIGN SYSTEM
+   ============================================================ */
+
+/* Section wrapper — a card with a gradient accent top border */
+.report-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  animation: rptFadeUp 0.35s ease both;
+}
+
+.report-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--info), var(--success));
+  opacity: 0.7;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+/* Section title — dot accent + gradient text */
+.report-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.report-section-title::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--info));
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* KPI card hover state — let JS set box-shadow per accent color */
+.report-kpi-card {
+  cursor: default;
+}
+
+/* Report Hub card */
+.report-hub-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+  position: relative;
+  overflow: hidden;
+  animation: rptFadeUp 0.3s ease both;
+}
+
+.report-hub-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
+.report-hub-card:hover {
+  transform: translateY(-3px);
+}
+
+.report-hub-card-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Staggered animation delays for hub cards */
+.report-hub-card:nth-child(1) { animation-delay: 0ms; }
+.report-hub-card:nth-child(2) { animation-delay: 40ms; }
+.report-hub-card:nth-child(3) { animation-delay: 80ms; }
+.report-hub-card:nth-child(4) { animation-delay: 120ms; }
+.report-hub-card:nth-child(5) { animation-delay: 160ms; }
+.report-hub-card:nth-child(6) { animation-delay: 200ms; }
+.report-hub-card:nth-child(7) { animation-delay: 240ms; }
+.report-hub-card:nth-child(8) { animation-delay: 280ms; }
+
+@keyframes rptFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
    ANIMATIONS
    ============================================================ */
 
@@ -789,6 +906,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .rounded-full { border-radius: 9999px; }
+
+/* Pin Tailwind's radius utilities to their standard sizes. The design system
+   reuses the --radius-* variable names with larger values (e.g. --radius-xl
+   is 24px), and Tailwind's generated `.rounded-xl { border-radius:
+   var(--radius-xl) }` would otherwise pick those up and over-round cards. */
+.rounded     { border-radius: 0.25rem; }
+.rounded-sm  { border-radius: 0.25rem; }
+.rounded-md  { border-radius: 0.375rem; }
+.rounded-lg  { border-radius: 0.5rem; }
+.rounded-xl  { border-radius: 0.75rem; }
+.rounded-2xl { border-radius: 1rem; }
 .rounded     { border-radius: var(--radius-md); }
 .rounded-lg  { border-radius: var(--radius-lg); }
 
@@ -908,6 +1036,92 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--text-muted) !important;
   box-shadow: var(--shadow-md) !important;
   transform: translateY(-1px);
+}
+
+/* Tasks page: board + insights sidebar (mirrors .crm-layout) */
+.board-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .board-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Tasks page: bottom analytics row (mirrors .crm-analytics-grid) */
+.stats-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1500px) {
+  .stats-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .stats-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* CRM pipeline page: board + insights sidebar */
+.crm-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .crm-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* CRM pipeline page: bottom analytics row */
+.crm-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1500px) {
+  .crm-analytics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .crm-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.crm-quick-action {
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.crm-quick-action:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.crm-col-add {
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.crm-col-add:hover,
+.crm-add-stage:hover {
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  background: var(--accent-subtle);
 }
 
 .kpi-skeleton {

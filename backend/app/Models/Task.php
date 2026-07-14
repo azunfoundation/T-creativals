@@ -31,6 +31,9 @@ class Task extends Model
         'actual_hours',
         'completion_percentage',
         'sort_order',
+        'tags',
+        'timer_started_at',
+        'timer_accumulated_seconds',
     ];
 
     protected function casts(): array
@@ -46,6 +49,9 @@ class Task extends Model
             'actual_hours' => 'decimal:2',
             'completion_percentage' => 'integer',
             'sort_order' => 'integer',
+            'tags' => 'array',
+            'timer_started_at' => 'datetime',
+            'timer_accumulated_seconds' => 'integer',
         ];
     }
 

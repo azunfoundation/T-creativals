@@ -18,13 +18,8 @@ export default function ProjectProfitabilityReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -53,8 +48,6 @@ export default function ProjectProfitabilityReport() {
     }
   };
 
-  // Shared project-status badge map (components/ui/StatusBadge) — labels
-  // upper-cased to preserve this report's original look.
   const getStatusBadge = (status: string) => {
     const config = statusBadgeConfig('project', status);
     return (
@@ -70,40 +63,35 @@ export default function ProjectProfitabilityReport() {
       label: 'Project Details',
       render: (val: any, row: any) => (
         <div>
-          <div className="font-bold text-slate-200">{val}</div>
-          <div className="text-[10px] font-mono text-slate-500 mt-0.5">{row.project_number}</div>
+          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{val}</div>
+          <div style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--text-muted)', marginTop: '2px' }}>{row.project_number}</div>
         </div>
       ),
     },
-    {
-      key: 'status',
-      label: 'Status',
-      align: 'center' as const,
-      render: (val: any) => getStatusBadge(val),
-    },
+    { key: 'status', label: 'Status', align: 'center' as const, render: (val: any) => getStatusBadge(val) },
     {
       key: 'hours_logged',
       label: 'Hours',
       align: 'center' as const,
-      render: (val: any) => <span className="font-mono text-slate-400">{val} hrs</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{val} hrs</span>,
     },
     {
       key: 'revenue',
       label: 'Billed / Budget',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-slate-300">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'labor_cost',
       label: 'Labor Cost',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-slate-400">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'expense_cost',
       label: 'Expenses',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-slate-450">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'net_profit',
@@ -112,7 +100,7 @@ export default function ProjectProfitabilityReport() {
       render: (val: any) => {
         const amt = Number(val);
         return (
-          <span className={`font-mono font-semibold ${amt >= 0 ? 'text-emerald-400' : 'text-rose-450'}`}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 600, color: amt >= 0 ? 'var(--success)' : 'var(--danger)' }}>
             {formatCurrency(amt)}
           </span>
         );
@@ -125,7 +113,7 @@ export default function ProjectProfitabilityReport() {
       render: (val: any) => {
         const pct = Number(val);
         return (
-          <span className={`font-mono font-bold ${pct >= 0 ? 'text-emerald-455' : 'text-rose-500'}`}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: pct >= 0 ? 'var(--success)' : 'var(--danger)' }}>
             {pct}%
           </span>
         );
@@ -133,8 +121,8 @@ export default function ProjectProfitabilityReport() {
     },
   ];
 
-  const profitColor = data && data.summary.total_net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400';
-  const marginColor = data && data.summary.avg_margin_pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+  const profitAccent = data && data.summary.total_net_profit >= 0 ? 'success' : 'danger';
+  const marginAccent = data && data.summary.avg_margin_pct >= 0 ? 'success' : 'danger';
 
   return (
     <ReportShell
@@ -145,7 +133,7 @@ export default function ProjectProfitabilityReport() {
           title="Project Profitability Report"
           content={{
             what: 'Revenue (linked invoice total, or budget if not yet invoiced) vs. timesheet labor cost and approved expenses logged in the period, for every project active at any point during it.',
-            why: 'A project counts as "in scope" if it overlaps the selected period at all — not only if it started inside it — so an ongoing project\'s costs for this period are never silently dropped.',
+            why: 'A project counts as "in scope" if it overlaps the selected period at all — not only if it started inside it.',
           }}
         />
       }
@@ -187,47 +175,17 @@ export default function ProjectProfitabilityReport() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Projects in Scope"
-              value={data.summary.project_count}
-              subtext="Active During Period"
-              icon={<Briefcase className="w-5 h-5 text-sky-400" />}
-            />
-            <KpiCard
-              title="Total Revenue"
-              value={formatCurrency(data.summary.total_revenue)}
-              subtext="Project Billed/Revenue"
-              icon={<Wallet className="w-5 h-5" />}
-            />
-            <KpiCard
-              title="Labor Cost"
-              value={formatCurrency(data.summary.total_labor_cost)}
-              subtext="Timesheet Hourly Cost"
-              icon={<Users className="w-5 h-5 text-violet-400" />}
-            />
-            <KpiCard
-              title="Direct Expenses"
-              value={formatCurrency(data.summary.total_expense_cost)}
-              subtext="Approved Allocations"
-              icon={<CreditCard className="w-5 h-5 text-rose-400" />}
-            />
-            <KpiCard
-              title="Net Profit"
-              value={formatCurrency(data.summary.total_net_profit)}
-              subtext="Revenue - Labor - Expense"
-              icon={<Sparkles className={`w-5 h-5 ${profitColor}`} />}
-            />
-            <KpiCard
-              title="Avg Margin"
-              value={`${data.summary.avg_margin_pct}%`}
-              subtext="Return on Projects"
-              icon={<TrendingUp className={`w-5 h-5 ${marginColor}`} />}
-            />
+            <KpiCard title="Projects in Scope" value={data.summary.project_count} subtext="Active During Period" icon={<Briefcase size={18} />} accent="info" />
+            <KpiCard title="Total Revenue" value={formatCurrency(data.summary.total_revenue)} subtext="Project Billed/Revenue" icon={<Wallet size={18} />} accent="success" />
+            <KpiCard title="Labor Cost" value={formatCurrency(data.summary.total_labor_cost)} subtext="Timesheet Hourly Cost" icon={<Users size={18} />} accent="accent" />
+            <KpiCard title="Direct Expenses" value={formatCurrency(data.summary.total_expense_cost)} subtext="Approved Allocations" icon={<CreditCard size={18} />} accent="danger" />
+            <KpiCard title="Net Profit" value={formatCurrency(data.summary.total_net_profit)} subtext="Revenue - Labor - Expense" icon={<Sparkles size={18} />} accent={profitAccent as any} />
+            <KpiCard title="Avg Margin" value={`${data.summary.avg_margin_pct}%`} subtext="Return on Projects" icon={<TrendingUp size={18} />} accent={marginAccent as any} />
           </div>
 
-          {/* Project Breakdown Table */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Per-Project Profitability Breakdown</h3>
+          {/* Breakdown Table */}
+          <div className="report-section">
+            <p className="report-section-title">Per-Project Profitability Breakdown</p>
             <ReportTable columns={columns} data={data.breakdown} />
           </div>
         </div>

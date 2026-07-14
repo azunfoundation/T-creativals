@@ -138,8 +138,41 @@ class ProjectController extends Controller
             'is_recurring' => 'nullable|boolean',
         ]);
 
+        $oldStatus = $project->status;
         $project->update($validated);
         $project->load(['members.user', 'members.department', 'client', 'manager', 'invoice']);
+
+        if ($project->status !== $oldStatus) {
+            $triggeredBy = $request->user()->id;
+            $statusLabels = [
+                'planning' => 'Planning',
+                'in_progress' => 'In Progress',
+                'active' => 'Active',
+                'on_hold' => 'On Hold',
+                'completed' => 'Completed',
+                'cancelled' => 'Cancelled'
+            ];
+            $statusLabel = $statusLabels[$project->status] ?? $project->status;
+
+            $usersToAlert = array_filter(array_unique(array_merge(
+                [$project->manager_id],
+                $project->members->pluck('user_id')->toArray()
+            )));
+
+            foreach ($usersToAlert as $userId) {
+                if ((int) $userId !== $triggeredBy) {
+                    \App\Services\NotificationService::alert('project_status_changed', [
+                        'user_id' => $userId,
+                        'triggered_by' => $triggeredBy,
+                        'type' => 'project_status_changed',
+                        'title' => 'Project Status Changed',
+                        'body' => "Project \"{$project->name}\" status updated to {$statusLabel}.",
+                        'action_url' => "/projects/{$project->id}",
+                        'metadata' => ['project_id' => $project->id, 'status' => $project->status],
+                    ]);
+                }
+            }
+        }
 
         return (new ProjectResource($project))->response();
     }
@@ -178,6 +211,19 @@ class ProjectController extends Controller
                 'joined_at' => $validated['joined_at'] ?? now(),
             ]
         );
+
+        $triggeredBy = $request->user()->id;
+        if ((int) $validated['user_id'] !== $triggeredBy) {
+            \App\Services\NotificationService::alert('project_member_added', [
+                'user_id' => $validated['user_id'],
+                'triggered_by' => $triggeredBy,
+                'type' => 'project_member_added',
+                'title' => 'Added to Project',
+                'body' => "You have been added as a member of project: {$project->name}.",
+                'action_url' => "/projects/{$project->id}",
+                'metadata' => ['project_id' => $project->id, 'role' => $validated['role'] ?? 'member'],
+            ]);
+        }
 
         $member->load(['user', 'department']);
         return (new ProjectMemberResource($member))->response()->setStatusCode(200);

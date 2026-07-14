@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -18,13 +18,8 @@ export default function SalesPipelineReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -34,11 +29,7 @@ export default function SalesPipelineReport() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['reports', 'pipeline', dates.from, dates.to, dateType],
     queryFn: async () => {
-      const res = await reports.getPipeline({
-        from: dates.from,
-        to: dates.to,
-        lead_date_type: dateType,
-      });
+      const res = await reports.getPipeline({ from: dates.from, to: dates.to, lead_date_type: dateType });
       return res.data;
     },
   });
@@ -117,8 +108,8 @@ export default function SalesPipelineReport() {
               {
                 heading: 'Created vs. Converted date',
                 items: [
-                  '"By Lead Created Date" shows every lead that entered the pipeline in the period, whether or not it has converted yet.',
-                  '"By Lead Converted Date" shows only leads that actually became clients during the period — use this to measure closed business, not just inflow.',
+                  '"By Lead Created Date" shows every lead that entered the pipeline in the period.',
+                  '"By Lead Converted Date" shows only leads that actually became clients during the period.',
                 ],
               },
               {
@@ -140,21 +131,16 @@ export default function SalesPipelineReport() {
       isLoading={isLoading}
       error={error ? (error as any).message : null}
     >
-      {/* Date Type Filter (created vs converted date type) */}
+      {/* Date Type Toggle */}
       <div style={{ display: 'flex', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '4px', maxWidth: '380px', marginBottom: '1rem' }}>
         <button
           onClick={() => setDateType('created')}
           style={{
-            flex: 1,
-            padding: '0.375rem 0.75rem',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
+            flex: 1, padding: '0.375rem 0.75rem', fontSize: '0.75rem', fontWeight: 600,
+            borderRadius: 'var(--radius-sm)', cursor: 'pointer',
             background: dateType === 'created' ? 'var(--accent)' : 'transparent',
             color: dateType === 'created' ? '#ffffff' : 'var(--text-secondary)',
-            transition: 'all var(--transition-fast)',
-            border: 'none',
+            transition: 'all var(--transition-fast)', border: 'none',
           }}
         >
           By Lead Created Date
@@ -162,16 +148,11 @@ export default function SalesPipelineReport() {
         <button
           onClick={() => setDateType('converted')}
           style={{
-            flex: 1,
-            padding: '0.375rem 0.75rem',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
+            flex: 1, padding: '0.375rem 0.75rem', fontSize: '0.75rem', fontWeight: 600,
+            borderRadius: 'var(--radius-sm)', cursor: 'pointer',
             background: dateType === 'converted' ? 'var(--accent)' : 'transparent',
             color: dateType === 'converted' ? '#ffffff' : 'var(--text-secondary)',
-            transition: 'all var(--transition-fast)',
-            border: 'none',
+            transition: 'all var(--transition-fast)', border: 'none',
           }}
         >
           By Lead Converted Date
@@ -182,41 +163,16 @@ export default function SalesPipelineReport() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Leads In Scope"
-              value={data.summary.total_leads}
-              subtext={`Based on ${dateType} date`}
-              icon={<Users size={18} />}
-            />
-            <KpiCard
-              title="Converted Leads"
-              value={data.summary.converted_leads}
-              subtext="Successfully Won"
-              icon={<UserCheck size={18} />}
-            />
-            <KpiCard
-              title="Conversion Rate"
-              value={`${data.summary.conversion_rate_pct}%`}
-              subtext="Win Ratio in Period"
-              icon={<Sparkles size={18} />}
-            />
-            <KpiCard
-              title="Avg Budget"
-              value={formatCurrency(data.summary.avg_budget)}
-              subtext="Estimated Monthly Budget"
-              icon={<PieChart size={18} />}
-            />
-            <KpiCard
-              title="Active Pipeline Value"
-              value={formatCurrency(data.summary.total_pipeline_value)}
-              subtext="Expected Monthly Revenue"
-              icon={<Flame size={18} />}
-            />
+            <KpiCard title="Leads In Scope" value={data.summary.total_leads} subtext={`Based on ${dateType} date`} icon={<Users size={18} />} accent="info" />
+            <KpiCard title="Converted Leads" value={data.summary.converted_leads} subtext="Successfully Won" icon={<UserCheck size={18} />} accent="success" />
+            <KpiCard title="Conversion Rate" value={`${data.summary.conversion_rate_pct}%`} subtext="Win Ratio in Period" icon={<Sparkles size={18} />} accent="accent" />
+            <KpiCard title="Avg Budget" value={formatCurrency(data.summary.avg_budget)} subtext="Estimated Monthly Budget" icon={<PieChart size={18} />} accent="warning" />
+            <KpiCard title="Active Pipeline Value" value={formatCurrency(data.summary.total_pipeline_value)} subtext="Expected Monthly Revenue" icon={<Flame size={18} />} accent="danger" />
           </div>
 
-          {/* Leads by Stage Chart */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Leads by Deal Stage</h3>
+          {/* Leads by Stage */}
+          <div className="report-section">
+            <p className="report-section-title">Leads by Deal Stage</p>
             <BarChart
               data={data.by_stage}
               xKey="stage_name"
@@ -225,16 +181,14 @@ export default function SalesPipelineReport() {
             />
           </div>
 
+          {/* Tables Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
-            {/* Sources Table */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Acquisition Channels Performance</h3>
+            <div className="report-section">
+              <p className="report-section-title">Acquisition Channels Performance</p>
               <ReportTable columns={sourceColumns} data={data.by_source} />
             </div>
-
-            {/* Executives Table */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Sales Executives Performance</h3>
+            <div className="report-section">
+              <p className="report-section-title">Sales Executives Performance</p>
               <ReportTable columns={execColumns} data={data.by_exec} />
             </div>
           </div>

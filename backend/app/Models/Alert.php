@@ -27,6 +27,21 @@ class Alert extends Model
     ];
 
     /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array<int, string>
+     */
+    protected $appends = ['read'];
+
+    /**
+     * Determine if the alert has been read.
+     */
+    public function getReadAttribute(): bool
+    {
+        return (bool) $this->is_read;
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

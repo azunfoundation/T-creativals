@@ -331,11 +331,19 @@ export interface LogActivityData {
 
 export interface Alert {
   id: number;
-  type: 'info' | 'success' | 'warning' | 'danger';
+  type: string;
   title: string;
   body: string;
   created_at: string;
   read: boolean;
+  action_url?: string;
+  metadata?: any;
+  triggered_by?: number;
+  triggerer?: {
+    id: number;
+    name: string;
+    avatar_url?: string;
+  };
 }
 
 // ============================================================
@@ -602,14 +610,20 @@ export const leadSources = {
 // ============================================================
 
 export const alerts = {
-  list: () =>
-    api.get<Alert[]>('/alerts'),
+  list: (params?: { filter?: string; search?: string }) =>
+    api.get<Alert[]>('/alerts', { params }),
 
   markRead: (id: number) =>
     api.post<void>(`/alerts/${id}/read`),
 
   markAllRead: () =>
     api.post<void>('/alerts/read-all'),
+
+  delete: (id: number) =>
+    api.delete<void>(`/alerts/${id}`),
+
+  deleteRead: () =>
+    api.delete<void>('/alerts/read'),
 };
 
 // ============================================================
@@ -1110,8 +1124,10 @@ export interface Project {
 
 export interface Task {
   id: number;
+  task_number?: string;
   project_id: number;
   project?: Project;
+  project_name?: string;
   parent_task_id?: number | null;
   title: string;
   description?: string;
@@ -1120,9 +1136,16 @@ export interface Task {
   /** Backend field name — do not rename to assignee_id, the API doesn't recognize that key. */
   assigned_to?: number | null;
   assignee?: User;
+  assignee_name?: string;
   due_date?: string;
   estimated_hours?: number;
+  actual_hours?: number;
   completion_percentage: number;
+  tags?: string[];
+  /** ISO timestamp while the timer is running, null when paused/idle. */
+  timer_started_at?: string | null;
+  /** Seconds banked from previous run segments (excludes the currently running one). */
+  timer_accumulated_seconds?: number;
   comments_count?: number;
   time_logged?: number;
   created_at?: string;
@@ -1279,6 +1302,10 @@ export const tasks = {
     }
     return res;
   },
+  startTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/start`),
+  pauseTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/pause`),
+  stopTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/stop`),
+  resetTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/reset`),
   listAttachments: (id: number) => api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
   addAttachment: (id: number, data: { filename: string; file_path: string; file_size?: number; mime_type?: string }) => api.post<TaskAttachment>(`/tasks/${id}/attachments`, data),
   deleteAttachment: (id: number, attachmentId: number) => api.delete(`/tasks/${id}/attachments/${attachmentId}`),

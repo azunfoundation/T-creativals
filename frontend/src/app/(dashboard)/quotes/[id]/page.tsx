@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { quotes as quotesApi, getApiErrorMessage } from '@/lib/api';
+import { quotes as quotesApi, platformSettings as settingsApi, SystemSettings, getApiErrorMessage } from '@/lib/api';
 import type { Quote } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import {
@@ -69,87 +69,7 @@ const QUOTE_DETAIL_HOWTO = {
   ],
 };
 
-// ── Mock Fallback Data ──────────────────────────────────────────
-const MOCK_QUOTE_DETAILS: Record<number, Quote> = {
-  1: {
-    id: 1,
-    quote_number: 'QT-2026-0001',
-    lead_id: 1,
-    lead: {
-      id: 1,
-      company_name: 'Apex Designs',
-      budget: 100000,
-      priority: 'medium',
-      temperature: 'warm',
-      contacts: [{ id: 1, lead_id: 1, name: 'Sanjay Kapoor', designation: 'Marketing Director', email: 'sanjay@apex.co', phone: '+91 98765 43210', is_primary: true }],
-      activities: [],
-      stage_id: 1,
-      source_id: 1,
-      created_at: '',
-      updated_at: ''
-    },
-    title: 'Website Redesign & SEO Campaign',
-    currency: 'INR',
-    valid_until: '2026-07-15T00:00:00Z',
-    status: 'pending_approval',
-    subtotal: 180000,
-    discount_amount: 15000,
-    tax_amount: 29700,
-    total_amount: 194700,
-    coupon_code: 'WELCOME10',
-    terms_conditions: '1. Validity: This quote is valid for 30 days.\n2. Payment Terms: 50% advance, 50% upon delivery.\n3. Taxes: 18% GST will be applicable.',
-    internal_notes: 'Margins are good. Standard 15% discount applied on development package.',
-    items: [
-      { id: 10, quote_id: 1, service_id: 4, description: 'Next.js Web App Development (Custom layout, headless CMS integration, contact forms)', quantity: 1, unit_price: 150000, discount_percent: 10, tax_rate: 18, subtotal: 150000, discount_amount: 15000, tax_amount: 24300, total_amount: 159300 },
-      { id: 11, quote_id: 1, service_id: 1, description: 'SEO Optimization (3 months campaign)', quantity: 1, unit_price: 30000, discount_percent: 0, tax_rate: 18, subtotal: 30000, discount_amount: 0, tax_amount: 54000, total_amount: 35405 },
-    ],
-    created_by: 2,
-    creator: { id: 2, name: 'Priya Singh', email: 'priya@creativals.in' },
-    approvals: [
-      { id: 1, quote_id: 1, user_id: 2, user: { id: 2, name: 'Priya Singh', email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' }, step_name: 'Draft Created', status: 'approved', comments: 'Initial quote proposal draft.', actioned_at: '2026-06-10T11:00:00Z', created_at: '2026-06-10T11:00:00Z' },
-      { id: 2, quote_id: 1, user_id: 2, user: { id: 2, name: 'Priya Singh', email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' }, step_name: 'Submit for Review', status: 'approved', comments: 'Ready for Sales Head sign-off.', actioned_at: '2026-06-10T11:30:00Z', created_at: '2026-06-10T11:30:00Z' },
-    ],
-    created_at: '2026-06-10T11:00:00Z',
-    updated_at: '2026-06-10T11:30:00Z',
-  },
-  2: {
-    id: 2,
-    quote_number: 'QT-2026-0002',
-    lead_id: 2,
-    lead: {
-      id: 2,
-      company_name: 'NovaTech Corp',
-      budget: 500000,
-      priority: 'high',
-      temperature: 'hot',
-      contacts: [{ id: 2, lead_id: 2, name: 'Amit Sharma', designation: 'CEO', email: 'amit@novatech.co', is_primary: true }],
-      activities: [],
-      stage_id: 1,
-      source_id: 1,
-      created_at: '',
-      updated_at: ''
-    },
-    title: 'Mobile App Custom Development',
-    currency: 'INR',
-    valid_until: '2026-06-30T00:00:00Z',
-    status: 'approved',
-    subtotal: 300000,
-    discount_amount: 0,
-    tax_amount: 54000,
-    total_amount: 354000,
-    terms_conditions: 'Standard terms apply.',
-    items: [
-      { id: 12, quote_id: 2, service_id: 5, description: 'Mobile App Development (iOS/Android cross platform app)', quantity: 1, unit_price: 300000, discount_percent: 0, tax_rate: 18, subtotal: 300000, discount_amount: 0, tax_amount: 54000, total_amount: 354000 },
-    ],
-    created_by: 2,
-    creator: { id: 2, name: 'Priya Singh', email: '' },
-    approvals: [
-      { id: 3, quote_id: 2, user_id: 1, user: { id: 1, name: 'Rahul Sharma', email: '', roles: [{ id: 1, name: 'founder', display_name: 'Founder' }], permissions: [], departments: [], avatar_url: null, status: 'active' }, step_name: 'Founder Review', status: 'approved', comments: 'Budget and scope look ideal.', actioned_at: '2026-06-09T14:20:00Z', created_at: '2026-06-09T14:20:00Z' }
-    ],
-    created_at: '2026-06-08T10:00:00Z',
-    updated_at: '2026-06-09T14:20:00Z',
-  }
-};
+// (mock fallback data removed — errors surface as real error states instead)
 
 interface Params {
   id: string;
@@ -221,47 +141,34 @@ export default function QuoteDetailPage({ params }: { params: Promise<Params> })
     }
   };
 
-  // Fetch quote detail
+  // Fetch settings
+  const { data: settings } = useQuery<SystemSettings>({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      const res = await settingsApi.get();
+      return res.data;
+    },
+  });
+
+  // Fetch quote detail — no mock fallback; a real 404/network error must surface
   const { data: quote, isLoading } = useQuery<Quote>({
     queryKey: ['quote-detail', quoteId],
     queryFn: async () => {
-      try {
-        const res = await quotesApi.get(quoteId);
-        return res.data;
-      } catch {
-        // Fallback
-        if (MOCK_QUOTE_DETAILS[quoteId]) {
-          return MOCK_QUOTE_DETAILS[quoteId];
-        }
-        throw new Error('Quote details not found');
-      }
-    }
+      const res = await quotesApi.get(quoteId);
+      return res.data;
+    },
   });
 
-  // Action Mutations
+  // Action Mutations — errors show as toasts, never fake success
   const submitApprovalMutation = useMutation({
     mutationFn: () => quotesApi.submitApproval(quoteId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quote-detail', quoteId] });
       showToast('Quote submitted for internal review.', 'info');
     },
-    onError: () => {
-      // Fallback
-      if (quote) {
-        quote.status = 'pending_approval';
-        quote.approvals = quote.approvals || [];
-        quote.approvals.push({
-          id: Date.now(),
-          quote_id: quoteId,
-          user_id: user?.id || 1,
-          user: user || undefined,
-          step_name: 'Submit Approval',
-          status: 'pending',
-          created_at: new Date().toISOString()
-        });
-        queryClient.setQueryData(['quote-detail', quoteId], { ...quote });
-      }
-    }
+    onError: (err: any) => {
+      showToast(getApiErrorMessage(err, 'Failed to submit quote for approval.'), 'error');
+    },
   });
 
   const approveMutation = useMutation({
@@ -270,28 +177,11 @@ export default function QuoteDetailPage({ params }: { params: Promise<Params> })
       queryClient.invalidateQueries({ queryKey: ['quote-detail', quoteId] });
       setApprovalModalOpen(false);
       setCommentsText('');
+      showToast('Quote approved successfully.', 'success');
     },
-    onError: () => {
-      // Fallback
-      if (quote) {
-        quote.status = 'approved';
-        quote.approvals = quote.approvals || [];
-        quote.approvals.push({
-          id: Date.now(),
-          quote_id: quoteId,
-          user_id: user?.id || 1,
-          user: user || undefined,
-          step_name: 'Sales Head / Founder Review',
-          status: 'approved',
-          comments: commentsText || 'Approved pricing terms.',
-          actioned_at: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        });
-        queryClient.setQueryData(['quote-detail', quoteId], { ...quote });
-      }
-      setApprovalModalOpen(false);
-      setCommentsText('');
-    }
+    onError: (err: any) => {
+      showToast(getApiErrorMessage(err, 'Failed to approve quote.'), 'error');
+    },
   });
 
   const rejectMutation = useMutation({
@@ -300,28 +190,11 @@ export default function QuoteDetailPage({ params }: { params: Promise<Params> })
       queryClient.invalidateQueries({ queryKey: ['quote-detail', quoteId] });
       setApprovalModalOpen(false);
       setCommentsText('');
+      showToast('Quote rejected. The creator has been notified.', 'info');
     },
-    onError: () => {
-      // Fallback
-      if (quote) {
-        quote.status = 'rejected';
-        quote.approvals = quote.approvals || [];
-        quote.approvals.push({
-          id: Date.now(),
-          quote_id: quoteId,
-          user_id: user?.id || 1,
-          user: user || undefined,
-          step_name: 'Sales Head / Founder Review',
-          status: 'rejected',
-          comments: commentsText || 'Rejected. Adjust pricing.',
-          actioned_at: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        });
-        queryClient.setQueryData(['quote-detail', quoteId], { ...quote });
-      }
-      setApprovalModalOpen(false);
-      setCommentsText('');
-    }
+    onError: (err: any) => {
+      showToast(getApiErrorMessage(err, 'Failed to reject quote.'), 'error');
+    },
   });
 
   if (isLoading) {
@@ -546,18 +419,33 @@ export default function QuoteDetailPage({ params }: { params: Promise<Params> })
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '1.5rem', borderBottom: '2px solid var(--border)', paddingBottom: '1.75rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <div className="workspace-logo" style={{ width: 38, height: 38, minWidth: 38, borderRadius: 10 }}>
-                  <FileText size={18} color="#fff" />
+                <div className="workspace-logo" style={{ width: 38, height: 38, minWidth: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  {settings?.company?.logo_url ? (
+                    <img 
+                      src={settings.company.logo_url} 
+                      alt="Logo" 
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                    />
+                  ) : (
+                    <FileText size={18} color="#fff" />
+                  )}
                 </div>
                 <span style={{ fontSize: '1.0625rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-                  Creativals Agency
+                  {settings?.company?.company_name || 'Creativals Agency'}
                 </span>
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                <p>7th Floor, DLF Cyber City, Phase 3</p>
-                <p>Gurugram, Haryana - 122002</p>
-                <p>GSTIN: 06AAFCC1483L1ZS</p>
-                <p>Email: operations@creativals.in</p>
+                {settings?.company?.company_address ? (
+                  <p style={{ whiteSpace: 'pre-line' }}>{settings.company.company_address}</p>
+                ) : (
+                  <>
+                    <p>7th Floor, DLF Cyber City, Phase 3</p>
+                    <p>Gurugram, Haryana - 122002</p>
+                    <p>GSTIN: 06AAFCC1483L1ZS</p>
+                  </>
+                )}
+                {settings?.company?.company_phone && <p>Phone: {settings.company.company_phone}</p>}
+                <p>Email: {settings?.company?.company_email || 'operations@creativals.in'}</p>
               </div>
             </div>
 

@@ -257,6 +257,7 @@ class RolesPermissionsSeeder extends Seeder
 
         // team_lead: tasks.view, tasks.create, tasks.edit, timesheets.log, timesheets.view
         Role::findByName('team_lead')->syncPermissions([
+            'projects.view',
             'tasks.view',
             'tasks.create',
             'tasks.edit',
@@ -268,6 +269,7 @@ class RolesPermissionsSeeder extends Seeder
 
         // employee: tasks.view, timesheets.log, timesheets.view
         Role::findByName('employee')->syncPermissions([
+            'projects.view',
             'tasks.view',
             'timesheets.log',
             'timesheets.view',

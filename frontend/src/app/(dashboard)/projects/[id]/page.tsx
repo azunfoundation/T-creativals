@@ -877,12 +877,12 @@ export default function ProjectDetailPage() {
 
                             <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.375rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
                               <span>Est: {tsk.estimated_hours || 0}h</span>
-                              {tsk.assignee && (
+                              {(tsk.assignee?.name || tsk.assignee_name) && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                                   <div className="avatar avatar-sm" style={{ width: 16, height: 16, fontSize: '0.5rem' }}>
-                                    {getInitials(tsk.assignee.name)}
+                                    {getInitials(tsk.assignee?.name || tsk.assignee_name || '')}
                                   </div>
-                                  <span>{tsk.assignee.name.split(' ')[0]}</span>
+                                  <span>{(tsk.assignee?.name || tsk.assignee_name)!.split(' ')[0]}</span>
                                 </div>
                               )}
                             </div>

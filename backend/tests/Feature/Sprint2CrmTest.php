@@ -464,7 +464,7 @@ class Sprint2CrmTest extends TestCase
         ]);
 
         // Get unread alerts
-        $response = $this->getJson('/api/v1/alerts');
+        $response = $this->getJson('/api/v1/alerts?filter=unread');
         $response->assertStatus(200);
         $this->assertCount(2, $response->json('data'));
 
@@ -474,7 +474,7 @@ class Sprint2CrmTest extends TestCase
         $this->assertTrue($alert1->fresh()->is_read);
 
         // Get unread alerts again (should be 1 now)
-        $response = $this->getJson('/api/v1/alerts');
+        $response = $this->getJson('/api/v1/alerts?filter=unread');
         $this->assertCount(1, $response->json('data'));
 
         // Mark all as read
@@ -483,7 +483,7 @@ class Sprint2CrmTest extends TestCase
         $this->assertTrue($alert2->fresh()->is_read);
 
         // Get unread alerts again (should be 0 now)
-        $response = $this->getJson('/api/v1/alerts');
+        $response = $this->getJson('/api/v1/alerts?filter=unread');
         $this->assertCount(0, $response->json('data'));
     }
 }

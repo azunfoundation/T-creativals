@@ -17,13 +17,8 @@ export default function Client360Report() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -53,12 +48,8 @@ export default function Client360Report() {
   };
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return <span className="text-slate-600">-</span>;
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
+    if (!dateString) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+    return new Date(dateString).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const columns = [
@@ -67,8 +58,8 @@ export default function Client360Report() {
       label: 'Client / Company Name',
       render: (val: any, row: any) => (
         <div>
-          <div className="font-bold text-slate-200">{val}</div>
-          <div className="text-[10px] text-slate-550 mt-0.5">{row.client_email}</div>
+          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{val}</div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{row.client_email}</div>
         </div>
       ),
     },
@@ -77,8 +68,8 @@ export default function Client360Report() {
       label: 'Projects (Active/Total)',
       align: 'center' as const,
       render: (_: any, row: any) => (
-        <span className="font-mono text-slate-300">
-          {row.active_projects} <span className="text-slate-600 text-[10px]">/</span> {row.total_projects}
+        <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+          {row.active_projects} <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>/</span> {row.total_projects}
         </span>
       ),
     },
@@ -87,14 +78,14 @@ export default function Client360Report() {
       label: 'Total Billed',
       align: 'right' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono text-slate-300">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'total_paid',
       label: 'Total Collected',
       align: 'right' as const,
       sortable: true,
-      render: (val: any) => <span className="font-mono text-emerald-450">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--success)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'total_outstanding',
@@ -104,7 +95,7 @@ export default function Client360Report() {
       render: (val: any) => {
         const amt = Number(val);
         return (
-          <span className={`font-mono font-semibold ${amt > 0 ? 'text-rose-450' : 'text-slate-500'}`}>
+          <span style={{ fontFamily: 'monospace', fontWeight: amt > 0 ? 600 : undefined, color: amt > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
             {formatCurrency(amt)}
           </span>
         );
@@ -112,15 +103,15 @@ export default function Client360Report() {
     },
     {
       key: 'last_invoice_date',
-      label: 'Last Invoice Date',
+      label: 'Last Invoice',
       align: 'center' as const,
-      render: (val: any) => <span className="text-slate-400">{formatDate(val)}</span>,
+      render: (val: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{formatDate(val)}</span>,
     },
     {
       key: 'last_payment_date',
-      label: 'Last Payment Date',
+      label: 'Last Payment',
       align: 'center' as const,
-      render: (val: any) => <span className="text-slate-400">{formatDate(val)}</span>,
+      render: (val: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{formatDate(val)}</span>,
     },
   ];
 
@@ -173,41 +164,16 @@ export default function Client360Report() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Total Clients"
-              value={data.summary.total_clients}
-              subtext="Registered Clients"
-              icon={<Building2 className="w-5 h-5 text-sky-400" />}
-            />
-            <KpiCard
-              title="Active Accounts"
-              value={data.summary.total_active}
-              subtext="With Active Projects"
-              icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            />
-            <KpiCard
-              title="Total Billed"
-              value={formatCurrency(data.summary.total_billed)}
-              subtext="Billed in Selected Period"
-              icon={<DollarSign className="w-5 h-5 text-indigo-400" />}
-            />
-            <KpiCard
-              title="Total Collected"
-              value={formatCurrency(data.summary.total_collected)}
-              subtext="Cleared Payouts"
-              icon={<Wallet className="w-5 h-5 text-emerald-450" />}
-            />
-            <KpiCard
-              title="Outstanding"
-              value={formatCurrency(data.summary.total_outstanding)}
-              subtext="Awaiting Collections"
-              icon={<AlertTriangle className="w-5 h-5 text-rose-400" />}
-            />
+            <KpiCard title="Total Clients" value={data.summary.total_clients} subtext="Registered Clients" icon={<Building2 size={18} />} accent="info" />
+            <KpiCard title="Active Accounts" value={data.summary.total_active} subtext="With Active Projects" icon={<CheckCircle2 size={18} />} accent="success" />
+            <KpiCard title="Total Billed" value={formatCurrency(data.summary.total_billed)} subtext="Billed in Selected Period" icon={<DollarSign size={18} />} accent="accent" />
+            <KpiCard title="Total Collected" value={formatCurrency(data.summary.total_collected)} subtext="Cleared Payouts" icon={<Wallet size={18} />} accent="success" />
+            <KpiCard title="Outstanding" value={formatCurrency(data.summary.total_outstanding)} subtext="Awaiting Collections" icon={<AlertTriangle size={18} />} accent="danger" />
           </div>
 
           {/* Client Table */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Client Accounts Performance Breakdown</h3>
+          <div className="report-section">
+            <p className="report-section-title">Client Accounts Performance Breakdown</p>
             <ReportTable columns={columns} data={data.breakdown} />
           </div>
         </div>

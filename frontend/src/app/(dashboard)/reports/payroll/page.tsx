@@ -17,13 +17,8 @@ export default function PayrollSummaryReport() {
     const now = new Date();
     const year = now.getFullYear();
     let fyStartYear = year;
-    if (now.getMonth() < 3) {
-      fyStartYear = year - 1;
-    }
-    return {
-      from: `${fyStartYear}-04-01`,
-      to: `${fyStartYear + 1}-03-31`,
-    };
+    if (now.getMonth() < 3) fyStartYear = year - 1;
+    return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
   const [dates, setDates] = useState(getInitialDates());
@@ -53,20 +48,13 @@ export default function PayrollSummaryReport() {
   };
 
   const getMonthName = (monthNum: number) => {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     return months[monthNum - 1] || String(monthNum);
   };
 
   const runColumns = [
     { key: 'run_number', label: 'Run Number' },
-    {
-      key: 'period',
-      label: 'Pay Period',
-      render: (_: any, row: any) => `${getMonthName(row.month)} ${row.year}`,
-    },
+    { key: 'period', label: 'Pay Period', render: (_: any, row: any) => `${getMonthName(row.month)} ${row.year}` },
     { key: 'employee_count', label: 'Employees', align: 'center' as const },
     {
       key: 'status',
@@ -74,24 +62,20 @@ export default function PayrollSummaryReport() {
       align: 'center' as const,
       render: (val: any) => {
         const badgeClass = val === 'paid' ? 'badge-success' : 'badge-warning';
-        return (
-          <span className={`badge ${badgeClass}`}>
-            {String(val).toUpperCase()}
-          </span>
-        );
+        return <span className={`badge ${badgeClass}`}>{String(val).toUpperCase()}</span>;
       },
     },
     {
       key: 'total_gross',
       label: 'Gross Cost',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-slate-400">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'total_net',
       label: 'Net Disbursed',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono font-bold text-emerald-400">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(Number(val))}</span>,
     },
   ];
 
@@ -101,14 +85,14 @@ export default function PayrollSummaryReport() {
       key: 'base_salary',
       label: 'Base Pay',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-slate-400">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{formatCurrency(Number(val))}</span>,
     },
     {
       key: 'bonus_amount',
       label: 'Bonus',
       align: 'right' as const,
       render: (val: any) => (
-        <span className="font-mono text-emerald-450 font-medium">
+        <span style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 500 }}>
           {Number(val) > 0 ? `+${formatCurrency(Number(val))}` : '-'}
         </span>
       ),
@@ -117,7 +101,7 @@ export default function PayrollSummaryReport() {
       key: 'net_salary',
       label: 'Total Net Payout',
       align: 'right' as const,
-      render: (val: any) => <span className="font-mono text-emerald-400 font-semibold">{formatCurrency(Number(val))}</span>,
+      render: (val: any) => <span style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 600 }}>{formatCurrency(Number(val))}</span>,
     },
   ];
 
@@ -130,7 +114,7 @@ export default function PayrollSummaryReport() {
           title="Payroll Summary Report"
           content={{
             what: 'Payroll runs approved/processed/paid within the selected date range, scoped by when the run was created — not the pay period it covers.',
-            why: 'A run created after month-end (a late close) shows up under the creation date\'s range, not the pay period\'s — keep that in mind when comparing to a specific month.',
+            why: 'A run created after month-end (a late close) shows up under the creation date\'s range, not the pay period\'s.',
           }}
         />
       }
@@ -165,48 +149,21 @@ export default function PayrollSummaryReport() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
-            <KpiCard
-              title="Payroll Runs"
-              value={data.summary.run_count}
-              subtext="Completed Payrolls"
-              icon={<ShieldCheck className="w-5 h-5 text-sky-455" />}
-            />
-            <KpiCard
-              title="Total Gross Outlay"
-              value={formatCurrency(data.summary.total_gross)}
-              subtext="Company-side Cost"
-              icon={<Coins className="w-5 h-5" />}
-            />
-            <KpiCard
-              title="Net Disbursed"
-              value={formatCurrency(data.summary.total_net)}
-              subtext="Total Employee Take-home"
-              icon={<CreditCard className="w-5 h-5 text-emerald-400" />}
-            />
-            <KpiCard
-              title="Deductions"
-              value={formatCurrency(data.summary.total_deductions)}
-              subtext="Taxes & Benefits"
-              icon={<Users className="w-5 h-5 text-rose-400" />}
-            />
-            <KpiCard
-              title="Bonuses Paid"
-              value={formatCurrency(data.summary.total_bonuses)}
-              subtext="Performance Incentives"
-              icon={<Gift className="w-5 h-5 text-violet-400" />}
-            />
+            <KpiCard title="Payroll Runs" value={data.summary.run_count} subtext="Completed Payrolls" icon={<ShieldCheck size={18} />} accent="info" />
+            <KpiCard title="Total Gross Outlay" value={formatCurrency(data.summary.total_gross)} subtext="Company-side Cost" icon={<Coins size={18} />} accent="muted" />
+            <KpiCard title="Net Disbursed" value={formatCurrency(data.summary.total_net)} subtext="Total Employee Take-home" icon={<CreditCard size={18} />} accent="success" />
+            <KpiCard title="Deductions" value={formatCurrency(data.summary.total_deductions)} subtext="Taxes & Benefits" icon={<Users size={18} />} accent="danger" />
+            <KpiCard title="Bonuses Paid" value={formatCurrency(data.summary.total_bonuses)} subtext="Performance Incentives" icon={<Gift size={18} />} accent="accent" />
           </div>
 
+          {/* Tables Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
-            {/* Left Column: Monthly Run History */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Payroll Run Logs</h3>
+            <div className="report-section">
+              <p className="report-section-title">Payroll Run Logs</p>
               <ReportTable columns={runColumns} data={data.by_month} />
             </div>
-
-            {/* Right Column: Top Earners */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 className="kpi-label" style={{ fontSize: '0.8125rem' }}>Top Compensation Earners</h3>
+            <div className="report-section">
+              <p className="report-section-title">Top Compensation Earners</p>
               <ReportTable columns={earnerColumns} data={data.top_earners} />
             </div>
           </div>

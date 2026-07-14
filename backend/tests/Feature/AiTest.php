@@ -290,6 +290,185 @@ class AiTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonFragment(['role' => 'assistant', 'content' => 'I have read the document.']);
     }
+
+    /**
+     * Test chat assistant routing to OpenAI when sk- API key is configured.
+     */
+    public function test_openai_chat_routing(): void
+    {
+        config(['services.gemini.key' => 'sk-proj-testkey123456789']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.com/*' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [
+                    [
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => 'Hello from OpenAI!'
+                        ]
+                    ]
+                ]
+            ], 200)
+        ]);
+
+        $response = $this->actingAs($this->founder, 'sanctum')
+            ->postJson('/api/v1/ai/chat', [
+                'content' => 'Hello AI'
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonFragment(['role' => 'assistant', 'content' => 'Hello from OpenAI!']);
+
+        \Illuminate\Support\Facades\Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'api.openai.com/v1/chat/completions') &&
+                $request->hasHeader('Authorization', 'Bearer sk-proj-testkey123456789');
+        });
+    }
+
+    /**
+     * Test OpenAI tool calling interception for sensitive actions.
+     */
+    public function test_openai_tool_calling_interception(): void
+    {
+        config(['services.gemini.key' => 'sk-proj-testkey123456789']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.com/*' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [
+                    [
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => null,
+                            'tool_calls' => [
+                                [
+                                    'id' => 'call_abc123',
+                                    'type' => 'function',
+                                    'function' => [
+                                        'name' => 'approve_payroll_run',
+                                        'arguments' => json_encode(['id' => 42])
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ], 200)
+        ]);
+
+        $response = $this->actingAs($this->founder, 'sanctum')
+            ->postJson('/api/v1/ai/chat', [
+                'content' => 'Approve payroll run 42'
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'conversation_id',
+                'action_confirmation' => ['action', 'params', 'message']
+            ])
+            ->assertJsonPath('action_confirmation.action', 'approve_payroll_run');
+    }
+
+    /**
+     * Test that voiceTalk endpoint enforces conversation ownership.
+     */
+    public function test_voice_talk_requires_conversation_ownership(): void
+    {
+        $otherUser = User::factory()->create();
+        $otherConversation = AiConversation::create([
+            'user_id' => $otherUser->id,
+            'title' => 'Other User Chat'
+        ]);
+
+        // Attempting to post to another user's conversation should return 404
+        $this->actingAs($this->founder, 'sanctum')
+            ->postJson('/api/v1/ai/voice/talk', [
+                'content' => 'Hello',
+                'conversation_id' => $otherConversation->id
+            ])
+            ->assertStatus(404);
+    }
+
+    /**
+     * Test that voiceTalk endpoint works with owned conversation.
+     */
+    public function test_voice_talk_works_with_owned_conversation(): void
+    {
+        $conversation = AiConversation::create([
+            'user_id' => $this->founder->id,
+            'title' => 'My Chat'
+        ]);
+
+        $this->actingAs($this->founder, 'sanctum')
+            ->postJson('/api/v1/ai/voice/talk', [
+                'content' => 'Hello',
+                'conversation_id' => $conversation->id
+            ])
+            ->assertStatus(200)
+            ->assertJsonStructure(['conversation_id', 'response_text'])
+            ->assertJsonPath('conversation_id', $conversation->id);
+    }
+
+    /**
+     * Test that GeminiService sanitizes conversation history to alternate roles.
+     */
+    public function test_gemini_service_sanitizes_alternating_history_roles(): void
+    {
+        config(['services.gemini.key' => 'fake-api-key']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'generativelanguage.googleapis.com/*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                [
+                                    'text' => 'Synthesized response'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ], 200)
+        ]);
+
+        $gemini = app(\App\Services\GeminiService::class);
+        
+        // Pass non-alternating history (e.g. user, user, assistant)
+        $history = [
+            ['role' => 'user', 'content' => 'First message'],
+            ['role' => 'user', 'content' => 'Second message'],
+            ['role' => 'assistant', 'content' => 'Reply message'],
+        ];
+
+        $response = $gemini->chat($history);
+
+        $this->assertEquals('Synthesized response', $response['content']);
+
+        // Assert that the request sent to Google contains merged user messages and alternates roles
+        \Illuminate\Support\Facades\Http::assertSent(function ($request) {
+            $payload = json_decode($request->body(), true);
+            $contents = $payload['contents'] ?? [];
+
+            // History should be cleaned up to only have 2 turns (user, model) instead of 3
+            if (count($contents) !== 2) {
+                return false;
+            }
+
+            // The first turn should contain the merged text of user messages
+            $firstTurn = $contents[0];
+            if ($firstTurn['role'] !== 'user' || !str_contains($firstTurn['parts'][0]['text'], "First message\n\nSecond message")) {
+                return false;
+            }
+
+            // The second turn should be the model's message
+            $secondTurn = $contents[1];
+            if ($secondTurn['role'] !== 'model' || $secondTurn['parts'][0]['text'] !== 'Reply message') {
+                return false;
+            }
+
+            return true;
+        });
+    }
 }
 
 

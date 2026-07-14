@@ -6,6 +6,7 @@ import { departments as deptApi, users as usersApi, getApiErrorMessage } from '@
 import type { Department, User } from '@/lib/api';
 import { Plus, Edit2, Trash2, X, Users, Check } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
+import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
 
@@ -47,28 +48,8 @@ const DEPARTMENTS_HOWTO = {
   ],
 };
 
-// ── Mock Data ──────────────────────────────────────────────────
+// ── Color Palette for new departments ─────────────────────────────────
 const DEPT_COLORS = ['#7c3aed', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6'];
-
-const MOCK_DEPTS: Department[] = [
-  { id: 1, name: 'Leadership',       color: '#7c3aed', members_count: 2,  head: { id: 1, name: 'Rahul Sharma',  email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' } },
-  { id: 2, name: 'Design',           color: '#ec4899', members_count: 5,  head: { id: 3, name: 'Arjun Kumar',   email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' } },
-  { id: 3, name: 'Development',      color: '#3b82f6', members_count: 4,  head: { id: 4, name: 'Meera Reddy',   email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' } },
-  { id: 4, name: 'Projects',         color: '#10b981', members_count: 3,  head: { id: 2, name: 'Priya Singh',   email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' } },
-  { id: 5, name: 'Finance',          color: '#f59e0b', members_count: 2,  head: { id: 5, name: 'Vikram Nair',   email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'inactive' } },
-  { id: 6, name: 'HR & Operations',  color: '#f97316', members_count: 2,  head: { id: 6, name: 'Anjali Patel',  email: '', roles: [], permissions: [], departments: [], avatar_url: null, status: 'active' } },
-  { id: 7, name: 'Sales & CRM',      color: '#8b5cf6', members_count: 3,  head: undefined },
-  { id: 8, name: 'Client Success',   color: '#14b8a6', members_count: 2,  head: undefined },
-];
-
-const MOCK_USERS: User[] = [
-  { id: 1, name: 'Rahul Sharma', email: 'rahul@creativals.in', roles: [{ id: 1, name: 'founder', display_name: 'Founder' }], permissions: [], departments: [], avatar_url: null, status: 'active' },
-  { id: 2, name: 'Priya Singh',  email: 'priya@creativals.in', roles: [{ id: 3, name: 'pm', display_name: 'Project Manager' }], permissions: [], departments: [], avatar_url: null, status: 'active' },
-  { id: 3, name: 'Arjun Kumar',  email: 'arjun@creativals.in', roles: [{ id: 4, name: 'designer', display_name: 'Designer' }], permissions: [], departments: [], avatar_url: null, status: 'active' },
-  { id: 4, name: 'Meera Reddy',  email: 'meera@creativals.in', roles: [{ id: 5, name: 'developer', display_name: 'Developer' }], permissions: [], departments: [], avatar_url: null, status: 'active' },
-  { id: 5, name: 'Vikram Nair',  email: 'vikram@creativals.in', roles: [{ id: 7, name: 'accounts', display_name: 'Accounts' }], permissions: [], departments: [], avatar_url: null, status: 'inactive' },
-  { id: 6, name: 'Anjali Patel', email: 'anjali@creativals.in', roles: [{ id: 6, name: 'hr', display_name: 'HR' }], permissions: [], departments: [], avatar_url: null, status: 'active' },
-];
 
 // ── Form State ─────────────────────────────────────────────────
 interface DeptForm {
@@ -313,9 +294,10 @@ function DeptFormModal({
   );
 }
 
-// ── Page ───────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────
 export default function DepartmentsPage() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editDept, setEditDept] = useState<Department | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -344,7 +326,10 @@ export default function DepartmentsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deptApi.delete(id),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['departments'] }); setDeleteConfirm(null); },
-    onError: () => { setDeleteConfirm(null); }, // Demo fallback
+    onError: (err: unknown) => {
+      setDeleteConfirm(null);
+      showToast(getApiErrorMessage(err, 'Could not delete department. It may still have members or be referenced elsewhere.'), 'error');
+    },
   });
 
   const depts = deptsData || [];

@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useModal } from '@/providers/ModalProvider';
 import { useToast } from '@/hooks/useToast';
 import { useAuthStore } from '@/store/auth';
-import { expenses as expensesApi, getApiErrorMessage } from '@/lib/api';
+import { expenses as expensesApi, platformSettings as settingsApi, SystemSettings, getApiErrorMessage } from '@/lib/api';
 import type { Expense, ExpenseTimelineEntry } from '@/lib/api';
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import {
@@ -129,6 +129,15 @@ export default function ExpenseDetailPage({ params }: { params: Promise<Params> 
 
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+
+  // Fetch settings
+  const { data: settings } = useQuery<SystemSettings>({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      const res = await settingsApi.get();
+      return res.data;
+    },
+  });
 
   // Fetch expense details
   const { data: expense, isLoading } = useQuery<Expense | null>({
@@ -466,15 +475,33 @@ export default function ExpenseDetailPage({ params }: { params: Promise<Params> 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg, var(--accent), #4f46e5)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-sm)' }}>
-                    <CreditCard style={{ color: '#ffffff', width: '18px', height: '18px' }} />
+                  <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: 'var(--shadow-sm)', background: settings?.company?.logo_url ? 'none' : 'linear-gradient(135deg, var(--accent), #4f46e5)' }}>
+                    {settings?.company?.logo_url ? (
+                      <img 
+                        src={settings.company.logo_url} 
+                        alt="Logo" 
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                      />
+                    ) : (
+                      <CreditCard style={{ color: '#ffffff', width: '18px', height: '18px' }} />
+                    )}
                   </div>
-                  <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Creativals Agency</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                    {settings?.company?.company_name || 'Creativals Agency'}
+                  </span>
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.125rem', lineHeight: 1.5 }}>
-                  <p>7th Floor, DLF Cyber City, Phase 3</p>
-                  <p>Gurugram, Haryana - 122002</p>
-                  <p>GSTIN: 06AAFCC1483L1ZS</p>
+                  {settings?.company?.company_address ? (
+                    <p style={{ whiteSpace: 'pre-line' }}>{settings.company.company_address}</p>
+                  ) : (
+                    <>
+                      <p>7th Floor, DLF Cyber City, Phase 3</p>
+                      <p>Gurugram, Haryana - 122002</p>
+                      <p>GSTIN: 06AAFCC1483L1ZS</p>
+                    </>
+                  )}
+                  {settings?.company?.company_phone && <p>Phone: {settings.company.company_phone}</p>}
+                  <p>Email: {settings?.company?.company_email || 'operations@creativals.in'}</p>
                 </div>
               </div>
 

@@ -200,6 +200,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/', [AlertController::class, 'index'])->name('index');
             Route::post('/read-all', [AlertController::class, 'markAllRead'])->name('read-all');
             Route::post('/{id}/read', [AlertController::class, 'markRead'])->name('read');
+            Route::delete('/read', [AlertController::class, 'destroyRead'])->name('destroy-read');
+            Route::delete('/{id}', [AlertController::class, 'destroy'])->name('destroy');
         });
 
         /*
@@ -254,6 +256,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('tasks/{task}/comments', [TaskController::class, 'addComment']);
         Route::get('tasks/{task}/comments', [TaskController::class, 'listComments']);
         Route::post('tasks/{task}/time-log', [TaskController::class, 'logTime']);
+        Route::post('tasks/{task}/timer/start', [TaskController::class, 'startTimer']);
+        Route::post('tasks/{task}/timer/pause', [TaskController::class, 'pauseTimer']);
+        Route::post('tasks/{task}/timer/stop', [TaskController::class, 'stopTimer']);
+        Route::post('tasks/{task}/timer/reset', [TaskController::class, 'resetTimer']);
         Route::get('projects/{project}/tasks', [TaskController::class, 'projectTasks']);
         Route::apiResource('tasks', TaskController::class);
 
@@ -271,7 +277,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('payroll/runs/{payroll_run}/export', [PayrollRunController::class, 'export'])->name('payroll.runs.export');
         Route::post('payroll/runs/{payroll_run}/approve', [PayrollRunController::class, 'approve'])->name('payroll.runs.approve');
         Route::get('payroll/cost-allocation', [PayrollRunController::class, 'costAllocation'])->name('payroll.cost-allocation');
-        Route::apiResource('payroll/runs', PayrollRunController::class)->only(['index', 'store', 'show']);
+        Route::apiResource('payroll/runs', PayrollRunController::class)->parameters(['runs' => 'payroll_run'])->only(['index', 'store', 'show']);
 
         // Salary setup — without this, PayrollRunController@store has nothing to compute from.
         Route::get('compensation-types', [EmployeeCompensationController::class, 'types'])->name('compensation-types.index');

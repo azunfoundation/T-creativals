@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, CheckCheck, Info, CheckCircle, AlertTriangle, AlertCircle, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  Bell, CheckCheck, Info, CheckCircle, AlertTriangle, AlertCircle, X,
+  User, CheckSquare, FolderKanban, FileText, Receipt, Shield, ArrowRight, SlidersHorizontal
+} from 'lucide-react';
 import { alerts as alertsApi, Alert } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -11,17 +15,66 @@ interface AlertsDrawerProps {
   onClose: () => void;
 }
 
-const ALERT_CONFIG = {
-  info:    { icon: Info,          color: 'var(--info)',    bg: 'var(--info-subtle)' },
-  success: { icon: CheckCircle,   color: 'var(--success)', bg: 'var(--success-subtle)' },
-  warning: { icon: AlertTriangle, color: 'var(--warning)', bg: 'var(--warning-subtle)' },
-  danger:  { icon: AlertCircle,   color: 'var(--danger)',  bg: 'var(--danger-subtle)' },
+const getAlertConfig = (type: string) => {
+  if (type.startsWith('task_') || type === 'task') {
+    return { icon: CheckSquare, color: '#7c3aed', bg: 'rgba(124,58,237,0.06)' };
+  }
+  if (type.startsWith('project_') || type === 'project') {
+    return { icon: FolderKanban, color: '#059669', bg: 'rgba(5,150,105,0.06)' };
+  }
+  if (type.startsWith('lead_') || type.startsWith('crm_')) {
+    return { icon: User, color: '#d97706', bg: 'rgba(217,119,6,0.06)' };
+  }
+  if (type.startsWith('invoice_') || type === 'payment_received' || type === 'invoice_overdue') {
+    return { icon: Receipt, color: '#2563eb', bg: 'rgba(37,99,235,0.06)' };
+  }
+  if (type.startsWith('quote_')) {
+    return { icon: FileText, color: '#ec4899', bg: 'rgba(236,72,153,0.06)' };
+  }
+  if (type.includes('approval') || type.includes('approved') || type.includes('rejected')) {
+    return { icon: CheckCircle, color: '#7c3aed', bg: 'rgba(124,58,237,0.06)' };
+  }
+  if (type === 'mention') {
+    return { icon: User, color: '#3b82f6', bg: 'rgba(59,130,246,0.06)' };
+  }
+  if (type === 'system') {
+    return { icon: Shield, color: '#4b5563', bg: 'rgba(75,85,99,0.06)' };
+  }
+  return { icon: Info, color: '#2563eb', bg: 'rgba(37,99,235,0.06)' };
 };
+
+function groupAlerts(alertsList: Alert[]) {
+  const today: Alert[] = [];
+  const yesterday: Alert[] = [];
+  const earlier: Alert[] = [];
+
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterdayDate.toDateString();
+
+  alertsList.forEach((alert) => {
+    const alertDate = new Date(alert.created_at);
+    const alertDateStr = alertDate.toDateString();
+
+    if (alertDateStr === todayStr) {
+      today.push(alert);
+    } else if (alertDateStr === yesterdayStr) {
+      yesterday.push(alert);
+    } else {
+      earlier.push(alert);
+    }
+  });
+
+  return { today, yesterday, earlier };
+}
 
 export default function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'mentions'>('unread');
 
-  // Esc key listener
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -29,8 +82,7 @@ export default function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  // Fetch alerts with React Query — no mock fallback; a failed fetch surfaces
-  // as a real error state instead of masking backend failures with fake data.
+  // Fetch alerts - shares cache with AppShell query key
   const { data: alerts = [], isLoading, isError } = useQuery<Alert[]>({
     queryKey: ['alerts'],
     queryFn: async () => {
@@ -47,23 +99,7 @@ export default function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
   // Mutation to mark alert as read
   const markReadMutation = useMutation({
     mutationFn: (id: number) => alertsApi.markRead(id),
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ['alerts'] });
-      const previousAlerts = queryClient.getQueryData<Alert[]>(['alerts']);
-      if (previousAlerts) {
-        queryClient.setQueryData<Alert[]>(
-          ['alerts'],
-          previousAlerts.map((a) => (a.id === id ? { ...a, read: true } : a))
-        );
-      }
-      return { previousAlerts };
-    },
-    onError: (err, id, context) => {
-      if (context?.previousAlerts) {
-        queryClient.setQueryData(['alerts'], context.previousAlerts);
-      }
-    },
-    onSettled: () => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
@@ -71,39 +107,150 @@ export default function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
   // Mutation to mark all alerts as read
   const markAllReadMutation = useMutation({
     mutationFn: () => alertsApi.markAllRead(),
-    onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['alerts'] });
-      const previousAlerts = queryClient.getQueryData<Alert[]>(['alerts']);
-      if (previousAlerts) {
-        queryClient.setQueryData<Alert[]>(
-          ['alerts'],
-          previousAlerts.map((a) => ({ ...a, read: true }))
-        );
-      }
-      return { previousAlerts };
-    },
-    onError: (err, newTodo, context) => {
-      if (context?.previousAlerts) {
-        queryClient.setQueryData(['alerts'], context.previousAlerts);
-      }
-    },
-    onSettled: () => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
 
-  const unreadCount = alerts.filter((a) => !a.read).length;
+  const unreadCount = useMemo(() => alerts.filter((a) => !a.read).length, [alerts]);
+
+  // Filter alerts by active tab locally
+  const filteredAlerts = useMemo(() => {
+    if (activeTab === 'unread') {
+      return alerts.filter((a) => !a.read);
+    }
+    if (activeTab === 'mentions') {
+      return alerts.filter((a) => a.type === 'mention');
+    }
+    return alerts;
+  }, [alerts, activeTab]);
+
+  const grouped = useMemo(() => groupAlerts(filteredAlerts), [filteredAlerts]);
 
   if (!open) return null;
+
+  const handleNotificationClick = async (alert: Alert) => {
+    if (!alert.read) {
+      await markReadMutation.mutateAsync(alert.id);
+    }
+    if (alert.action_url) {
+      router.push(alert.action_url);
+      onClose();
+    }
+  };
+
+  const renderGroup = (title: string, list: Alert[]) => {
+    if (list.length === 0) return null;
+    return (
+      <div style={{ marginBottom: '1.25rem' }}>
+        <h3 style={{
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          padding: '0 0.5rem 0.5rem',
+        }}>
+          {title}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {list.map((alert) => {
+            const config = getAlertConfig(alert.type);
+            const Icon = config.icon;
+            return (
+              <div
+                key={alert.id}
+                onClick={() => handleNotificationClick(alert)}
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  padding: '1rem',
+                  borderRadius: '12px',
+                  background: alert.read ? 'transparent' : 'var(--surface-elevated)',
+                  border: '1px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  position: 'relative',
+                }}
+                className="notification-item-row"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                  e.currentTarget.style.background = 'var(--surface-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'transparent';
+                  e.currentTarget.style.background = alert.read ? 'transparent' : 'var(--surface-elevated)';
+                }}
+              >
+                {/* Icon Container */}
+                <div style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: '10px',
+                  flexShrink: 0,
+                  background: config.bg,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Icon size={18} style={{ color: config.color }} />
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: '0.875rem',
+                    fontWeight: alert.read ? 600 : 700,
+                    color: 'var(--text-primary)',
+                    marginBottom: '0.25rem',
+                    lineHeight: 1.3,
+                  }}>
+                    {alert.title}
+                  </div>
+                  <div style={{
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.4,
+                  }}>
+                    {alert.body}
+                  </div>
+                  <div style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)',
+                    marginTop: '0.375rem',
+                  }}>
+                    {formatRelativeTime(alert.created_at)}
+                  </div>
+                </div>
+
+                {/* Unread indicator dot */}
+                {!alert.read && (
+                  <div style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: config.color,
+                    flexShrink: 0,
+                    marginTop: '0.375rem',
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
       {/* Backdrop */}
       <div
         style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(3px)',
           zIndex: 60,
         }}
         onClick={onClose}
@@ -113,192 +260,295 @@ export default function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Notifications"
+        aria-label="Notifications Drawer"
         style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: 400,
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 420,
           background: 'var(--surface)',
           borderLeft: '1px solid var(--border)',
           zIndex: 61,
-          display: 'flex', flexDirection: 'column',
-          boxShadow: 'var(--shadow-lg)',
-          animation: 'slideInRight 0.25s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
+          animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Header */}
+        {/* Header Section */}
         <div style={{
-          padding: '1.25rem 1.25rem 1rem',
+          padding: '1.5rem 1.5rem 1rem',
           borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
           flexShrink: 0,
         }}>
-          <div>
-            <h2 style={{ fontSize: '1.0625rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Bell size={18} />
-              Notifications
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'rgba(124,58,237,0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--accent)',
+              }}>
+                <Bell size={18} />
+              </div>
+              <h2 style={{
+                fontSize: '1.125rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+              }}>
+                Notifications
+                {unreadCount > 0 && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                  }}>
+                    {unreadCount}
+                  </span>
+                )}
+              </h2>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               {unreadCount > 0 && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  minWidth: 20, height: 20, padding: '0 5px',
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  borderRadius: '9999px',
-                  fontSize: '0.6875rem',
-                  fontWeight: 700,
-                }}>
-                  {unreadCount}
-                </span>
+                <button
+                  id="mark-all-read"
+                  onClick={() => markAllReadMutation.mutate()}
+                  disabled={markAllReadMutation.isPending}
+                  style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--accent)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <CheckCheck size={14} />
+                  Mark all as read
+                </button>
               )}
-            </h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {unreadCount} unread of {alerts.length} total
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {unreadCount > 0 && (
               <button
-                id="mark-all-read"
-                onClick={() => markAllReadMutation.mutate()}
-                disabled={markAllReadMutation.isPending}
+                id="close-alerts-drawer"
+                onClick={onClose}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.375rem',
-                  fontSize: '0.75rem', color: 'var(--accent)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 28,
+                  height: 28,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  borderRadius: '50%',
+                  transition: 'background 0.2s',
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--border)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <CheckCheck size={13} />
-                Mark all read
+                <X size={16} />
               </button>
-            )}
-            <button
-              id="close-alerts-drawer"
-              onClick={onClose}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 30, height: 30,
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--text-muted)',
-                borderRadius: 'var(--radius-sm)',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-elevated)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
-            >
-              <X size={16} />
-            </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              {unreadCount} unread of {alerts.length} total
+            </span>
+          </div>
+
+          {/* Filter Tabs matching the layout */}
+          <div style={{
+            display: 'flex',
+            borderBottom: '1px solid var(--border)',
+            gap: '1rem',
+            marginTop: '0.25rem',
+          }}>
+            {(['all', 'unread', 'mentions'] as const).map((tab) => {
+              const label = tab.charAt(0).toUpperCase() + tab.slice(1);
+              const isActive = activeTab === tab;
+              const count = tab === 'unread' ? unreadCount : tab === 'mentions' ? alerts.filter(a => a.type === 'mention').length : null;
+
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    padding: '0.5rem 0.25rem 0.75rem',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                    borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                    background: 'none',
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    borderTop: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {label}
+                  {count !== null && count > 0 && (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      background: isActive ? 'var(--accent)' : 'var(--border)',
+                      color: isActive ? '#fff' : 'var(--text-muted)',
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                    }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Alerts list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem' }}>
+        {/* Alerts List Container */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '1.25rem 1.25rem 1rem',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
           {isLoading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '0.5rem' }}>
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="animate-pulse" style={{ background: 'var(--surface-elevated)', height: 75, borderRadius: 'var(--radius-md)' }} />
+                <div
+                  key={i}
+                  className="animate-pulse"
+                  style={{
+                    background: 'var(--surface-elevated)',
+                    height: 80,
+                    borderRadius: '12px',
+                  }}
+                />
               ))}
             </div>
           ) : isError ? (
-            <div style={{ paddingTop: '3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.375rem', textAlign: 'center' }}>
+            <div style={{
+              margin: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.5rem',
+              textAlign: 'center',
+              padding: '2rem',
+            }}>
               <AlertCircle size={32} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Couldn't load notifications.</p>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                Couldn't load notifications.
+              </p>
             </div>
-          ) : alerts.length === 0 ? (
-            <div className="empty-state" style={{ paddingTop: '5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-              <Bell size={48} style={{ color: 'var(--text-muted)', opacity: 0.3 }} />
-              <p style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>All caught up!</p>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>No notifications right now.</p>
+          ) : filteredAlerts.length === 0 ? (
+            <div style={{
+              margin: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.75rem',
+              textAlign: 'center',
+              padding: '2rem',
+            }}>
+              <div style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: 'var(--surface-elevated)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text-muted)',
+                marginBottom: '0.25rem',
+              }}>
+                <Bell size={24} style={{ opacity: 0.4 }} />
+              </div>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
+                All caught up!
+              </p>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: '220px' }}>
+                No notifications right now for this filter.
+              </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {alerts.map((alert) => {
-                const config = ALERT_CONFIG[alert.type] || ALERT_CONFIG.info;
-                const Icon = config.icon;
-                return (
-                  <div
-                    key={alert.id}
-                    onClick={() => {
-                      if (!alert.read) {
-                        markReadMutation.mutate(alert.id);
-                      }
-                    }}
-                    style={{
-                      display: 'flex', gap: '0.875rem',
-                      padding: '0.875rem',
-                      borderRadius: 'var(--radius-md)',
-                      background: alert.read ? 'transparent' : 'var(--surface-elevated)',
-                      border: '1px solid transparent',
-                      cursor: alert.read ? 'default' : 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}
-                  >
-                    {/* Icon */}
-                    <div style={{
-                      width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                      background: config.bg,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Icon size={16} style={{ color: config.color }} />
-                    </div>
-
-                    {/* Content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: '0.875rem',
-                        fontWeight: alert.read ? 400 : 600,
-                        color: 'var(--text-primary)',
-                        marginBottom: '0.25rem',
-                        lineHeight: 1.3,
-                      }}>
-                        {alert.title}
-                      </div>
-                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                        {alert.body}
-                      </div>
-                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.375rem' }}>
-                        {formatRelativeTime(alert.created_at)}
-                      </div>
-                    </div>
-
-                    {/* Unread dot */}
-                    {!alert.read && (
-                      <div style={{
-                        width: 7, height: 7, borderRadius: '50%',
-                        background: 'var(--accent)', flexShrink: 0,
-                        marginTop: '0.375rem',
-                      }} />
-                    )}
-                  </div>
-                );
-              })}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {renderGroup('Today', grouped.today)}
+              {renderGroup('Yesterday', grouped.yesterday)}
+              {renderGroup('Earlier', grouped.earlier)}
             </div>
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer Area with navigation */}
         <div style={{
-          padding: '1rem 1.25rem',
+          padding: '1.25rem',
           borderTop: '1px solid var(--border)',
+          background: 'var(--surface)',
           flexShrink: 0,
         }}>
           <button
+            onClick={() => {
+              router.push('/notifications');
+              onClose();
+            }}
             style={{
               width: '100%',
-              padding: '0.5rem',
-              background: 'var(--surface-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--text-secondary)',
+              padding: '0.75rem',
+              background: 'rgba(124,58,237,0.06)',
+              border: '1px solid rgba(124,58,237,0.15)',
+              borderRadius: '12px',
+              color: 'var(--accent)',
               fontSize: '0.875rem',
+              fontWeight: 600,
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.2s',
             }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-elevated)'; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(124,58,237,0.12)';
+              e.currentTarget.style.borderColor = 'rgba(124,58,237,0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(124,58,237,0.06)';
+              e.currentTarget.style.borderColor = 'rgba(124,58,237,0.15)';
+            }}
           >
-            View all notifications
+            <span>View all notifications</span>
+            <ArrowRight size={14} />
           </button>
         </div>
       </div>

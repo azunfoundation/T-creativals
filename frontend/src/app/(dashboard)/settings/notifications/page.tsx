@@ -2,19 +2,44 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Save, Loader2, AlertCircle, Mail, BellRing } from 'lucide-react';
+import { Bell, Save, Loader2, AlertCircle, Mail, BellRing, Volume2 } from 'lucide-react';
 import { notificationPreferences as prefsApi, getApiErrorMessage } from '@/lib/api';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+
+const playChime = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const playTone = (time: number, freq: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, time);
+      gain.gain.setValueAtTime(0.2, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(time);
+      osc.stop(time + duration);
+    };
+    const now = ctx.currentTime;
+    playTone(now, 523.25, 0.4);
+    playTone(now + 0.12, 659.25, 0.5);
+  } catch (e) {
+    console.error('Failed to play chime:', e);
+  }
+};
 
 // Every event listed here has REAL wiring behind it (see the cross-cutting
 // module audit): the email column is consulted before each mail is sent, and
 // the in-app column gates the alert for the events that produce one. Events
 // without an in-app alert show a dash instead of a decorative checkbox.
 const EVENT_TYPES: Array<{ key: string; label: string; desc: string; hasInApp: boolean }> = [
-  { key: 'task_assigned', label: 'Task Assignment', desc: 'When a new project task is assigned to you.', hasInApp: false },
-  { key: 'timesheet_submitted', label: 'Timesheet Submissions', desc: 'When a team member submits a timesheet for your review.', hasInApp: false },
-  { key: 'payroll_processed', label: 'Payslip Availability', desc: 'When your monthly salary run is approved and payslip is ready.', hasInApp: false },
+  { key: 'task_assigned', label: 'Task Assignment', desc: 'When a new project task is assigned to you.', hasInApp: true },
+  { key: 'timesheet_submitted', label: 'Timesheet Submissions', desc: 'When a team member submits a timesheet for your review.', hasInApp: true },
+  { key: 'payroll_processed', label: 'Payslip Availability', desc: 'When your monthly salary run is approved and payslip is ready.', hasInApp: true },
   { key: 'lead_assigned', label: 'Lead Assignment', desc: 'When a CRM lead is assigned or reassigned to you.', hasInApp: true },
   { key: 'invoice_overdue', label: 'Invoice Overdue', desc: 'When an invoice you issued passes its due date unpaid (checked daily).', hasInApp: true },
   { key: 'payment_received', label: 'Payment Received', desc: 'When someone records a client payment on an invoice you issued.', hasInApp: true },
@@ -27,6 +52,24 @@ export default function NotificationSettingsPage() {
 
   const [emailMap, setEmailMap] = useState<Record<string, boolean>>({});
   const [inAppMap, setInAppMap] = useState<Record<string, boolean>>({});
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  useEffect(() => {
+    const val = localStorage.getItem('notification_sound_enabled');
+    if (val !== null) {
+      setSoundEnabled(val === 'true');
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'notification_sound_enabled') {
+        setSoundEnabled(e.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // Fetch preferences. Note: the API returns a bare array ({data: [...]} with no
   // pagination meta), which the global axios interceptor unwraps to the array
@@ -245,6 +288,38 @@ export default function NotificationSettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Sound settings */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '1.25rem 0',
+            borderTop: '1px solid var(--border)',
+            marginTop: '1rem',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <Volume2 size={16} style={{ color: 'var(--accent)' }} /> Notification Sound
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Play a premium sound when new notifications arrive.</span>
+            </div>
+            <div>
+              <input
+                type="checkbox"
+                checked={soundEnabled}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setSoundEnabled(val);
+                  localStorage.setItem('notification_sound_enabled', String(val));
+                  if (val) {
+                    playChime();
+                  }
+                }}
+                style={{ transform: 'scale(1.25)', cursor: 'pointer' }}
+              />
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>

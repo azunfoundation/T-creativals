@@ -66,8 +66,21 @@ class BonusController extends Controller
         }
 
         $bonus->update(['status' => 'approved', 'approved_by' => request()->user()->id]);
+        $bonus->load(['user', 'currency', 'approver']);
 
-        return response()->json($bonus->load(['user', 'currency', 'approver']));
+        if ($bonus->user_id) {
+            \App\Services\NotificationService::alert('bonus_approved', [
+                'user_id' => $bonus->user_id,
+                'triggered_by' => request()->user()->id,
+                'type' => 'bonus_approved',
+                'title' => 'Bonus Approved',
+                'body' => "Your bonus of " . ($bonus->currency?->code ?? '') . " {$bonus->amount} has been approved.",
+                'action_url' => "/payroll",
+                'metadata' => ['bonus_id' => $bonus->id],
+            ]);
+        }
+
+        return response()->json($bonus);
     }
 
     public function reject(Bonus $bonus): JsonResponse
@@ -81,7 +94,20 @@ class BonusController extends Controller
         }
 
         $bonus->update(['status' => 'rejected', 'approved_by' => request()->user()->id]);
+        $bonus->load(['user', 'currency', 'approver']);
 
-        return response()->json($bonus->load(['user', 'currency', 'approver']));
+        if ($bonus->user_id) {
+            \App\Services\NotificationService::alert('bonus_rejected', [
+                'user_id' => $bonus->user_id,
+                'triggered_by' => request()->user()->id,
+                'type' => 'bonus_rejected',
+                'title' => 'Bonus Rejected',
+                'body' => "Your bonus of " . ($bonus->currency?->code ?? '') . " {$bonus->amount} has been rejected.",
+                'action_url' => "/payroll",
+                'metadata' => ['bonus_id' => $bonus->id],
+            ]);
+        }
+
+        return response()->json($bonus);
     }
 }
