@@ -111,6 +111,17 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Supabase uses PgBouncer in transaction-pooling mode (port 6543).
+            // PgBouncer transaction mode does NOT preserve named prepared
+            // statements across transactions — PDO's native prepares therefore
+            // fail intermittently with SQLSTATE 26000 ("prepared statement
+            // does not exist").  Emulated prepares send plain SQL strings
+            // instead of named server-side statements, which is fully
+            // compatible with PgBouncer transaction mode and has no functional
+            // downside for a Laravel application.
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         'sqlsrv' => [
