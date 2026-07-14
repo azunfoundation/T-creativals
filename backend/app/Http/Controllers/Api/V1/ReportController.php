@@ -1112,7 +1112,6 @@ class ReportController extends Controller
             // ── 5. Alerts list (always own records) ─────────────────────────
             $dashboardData['alerts_list'] = DB::table('alerts')
                 ->where('user_id', $user->id)
-                ->whereNull('deleted_at')
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();
