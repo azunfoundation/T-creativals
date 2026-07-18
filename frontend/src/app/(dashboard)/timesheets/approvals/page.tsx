@@ -452,21 +452,21 @@ export default function TimesheetApprovalsPage() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <div className="avatar avatar-sm">
-                          {getInitials(entry.user?.name || 'User')}
+                          {getInitials(entry.user_name || entry.user?.name || 'User')}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{entry.user?.name || 'Unknown'}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{entry.user?.email}</div>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{entry.user_name || entry.user?.name || 'Unknown'}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{entry.user?.email || ''}</div>
                         </div>
                       </div>
                     </td>
                     <td style={{ fontSize: '0.8125rem' }}>{formatDate(entry.date)}</td>
                     <td style={{ fontWeight: 600, fontSize: '0.8125rem' }}>
-                      {entry.project?.name || `Project #${entry.project_id}`}
+                      {entry.project_name || entry.project?.name || `Project #${entry.project_id}`}
                     </td>
                     <td>
                       <div>
-                        <div style={{ fontSize: '0.8125rem', fontWeight: 500 }}>{entry.task?.title || 'General Scope'}</div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 500 }}>{entry.task_title || entry.task?.title || 'General Scope'}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{entry.description || '—'}</div>
                       </div>
                     </td>

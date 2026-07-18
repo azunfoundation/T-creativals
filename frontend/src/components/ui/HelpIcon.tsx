@@ -1,8 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, X } from 'lucide-react';
+import { 
+  Info, 
+  X, 
+  BookOpen, 
+  Target, 
+  Clock, 
+  Sparkles, 
+  Lightbulb, 
+  AlertTriangle, 
+  ListOrdered 
+} from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -29,15 +39,17 @@ interface HelpIconProps {
   size?: number;
 }
 
-// Panel dimensions (used for positioning math)
-const PANEL_WIDTH = 320;
-const PANEL_MAX_HEIGHT = 480;
-const PANEL_MARGIN = 10; // gap from trigger icon, px
-const VIEWPORT_PADDING = 8; // min distance from viewport edges, px
+// ─────────────────────────────────────────────────────────────────────────────
+// Rich content enrichment logic
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Rich content enrichment logic  (unchanged from original)
-// ─────────────────────────────────────────────────────────────────────────────
+function matchesKeyword(text: string, keyword: string): boolean {
+  if (keyword.includes(' ')) {
+    return text.includes(keyword);
+  }
+  const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+  return regex.test(text);
+}
 
 function getEnrichedContent(text?: string, title?: string): HelpContent {
   const normText = (text || '').toLowerCase();
@@ -63,7 +75,7 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  if (normText.includes('tds') || normText.includes('tax deducted') || normText.includes('gst percentage') || normTitle.includes('tax') || normText.includes('tax rate') || normText.includes('tax percentage')) {
+  if (matchesKeyword(normText, 'tds') || normText.includes('tax deducted') || normText.includes('gst percentage') || normTitle.includes('tax') || normText.includes('tax rate') || normText.includes('tax percentage')) {
     return {
       what: 'Statutory tax rates (e.g. GST) or withholding tax percentages (TDS) applied to transactions or payroll.',
       why: 'Ensures compliance with national taxation laws and calculates accurate take-home pay or invoice totals.',
@@ -163,7 +175,7 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  if (normText.includes('provident fund') || normText.includes('pf') || normTitle.includes('pf')) {
+  if (normText.includes('provident fund') || matchesKeyword(normText, 'pf') || matchesKeyword(normTitle, 'pf')) {
     return {
       what: 'Retirement-savings percentage deducted from basic salary (usually 12%).',
       why: 'Statutory compliance ensuring post-retirement financial security for personnel.',
@@ -173,7 +185,7 @@ function getEnrichedContent(text?: string, title?: string): HelpContent {
     };
   }
 
-  if (normText.includes('employee state insurance') || normText.includes('esi') || normTitle.includes('esi')) {
+  if (normText.includes('employee state insurance') || matchesKeyword(normText, 'esi') || matchesKeyword(normTitle, 'esi')) {
     return {
       what: 'State-managed healthcare insurance contribution deducted from eligible employee salaries.',
       why: 'Mandatory social security program providing medical benefits to qualified personnel.',
@@ -518,100 +530,218 @@ function generateFallbackHelp(text: string, title?: string): HelpContent {
 interface PanelPosition {
   top: number;
   left: number;
-  transformOrigin: string;
+  placement: 'right' | 'left' | 'bottom' | 'top';
 }
 
-function computePosition(triggerRect: DOMRect): PanelPosition {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const p = VIEWPORT_PADDING;
+const VIEWPORT_PADDING = 12; // margin from viewport edges
+const PANEL_MARGIN = 8;      // margin from trigger button
+const PANEL_WIDTH = 380;     // width of card
 
-  // Try RIGHT of the icon first
-  const spaceRight = vw - triggerRect.right - PANEL_MARGIN;
-  const spaceLeft  = triggerRect.left - PANEL_MARGIN;
-  const spaceBelow = vh - triggerRect.bottom - PANEL_MARGIN;
-  const spaceAbove = triggerRect.top - PANEL_MARGIN;
+const SECTION_THEMES = {
+  what: { icon: BookOpen, iconColor: '#7c3aed', bgColor: '#f5f3ff', title: 'What is this?' },
+  why: { icon: Target, iconColor: '#ec4899', bgColor: '#fdf2f8', title: 'Why should I use it?' },
+  when: { icon: Clock, iconColor: '#3b82f6', bgColor: '#eff6ff', title: 'When should I use it?' },
+  example: { icon: Sparkles, iconColor: '#10b981', bgColor: '#ecfdf5', title: 'Example' },
+  bestPractices: { icon: Lightbulb, iconColor: '#eab308', bgColor: '#fffbeb', title: 'Best Practice' },
+  mistakes: { icon: AlertTriangle, iconColor: '#ef4444', bgColor: '#fef2f2', title: 'Common Mistakes' },
+  steps: { icon: ListOrdered, iconColor: '#6366f1', bgColor: '#e0e7ff', title: 'Steps' },
+};
 
-  let left: number;
-  let top: number;
-  let transformOrigin: string;
+function HelpSection({
+  type,
+  content,
+}: {
+  type: keyof typeof SECTION_THEMES;
+  content: string | string[];
+}) {
+  const theme = SECTION_THEMES[type];
+  const Icon = theme.icon;
 
-  // ── Horizontal axis ──
-  if (spaceRight >= PANEL_WIDTH) {
-    // Enough space to the right
-    left = triggerRect.right + PANEL_MARGIN;
-    transformOrigin = 'left center';
-  } else if (spaceLeft >= PANEL_WIDTH) {
-    // Enough space to the left
-    left = triggerRect.left - PANEL_MARGIN - PANEL_WIDTH;
-    transformOrigin = 'right center';
-  } else {
-    // Neither side has full width — center horizontally and clamp
-    left = triggerRect.left + triggerRect.width / 2 - PANEL_WIDTH / 2;
-    transformOrigin = 'top center';
-  }
-
-  // ── Vertical axis (start aligned to trigger center) ──
-  const idealTop = triggerRect.top + triggerRect.height / 2 - 40;
-
-  if (transformOrigin === 'top center') {
-    // Panel goes below or above
-    if (spaceBelow >= PANEL_MAX_HEIGHT * 0.5) {
-      top = triggerRect.bottom + PANEL_MARGIN;
-      transformOrigin = 'top center';
-    } else {
-      top = triggerRect.top - PANEL_MARGIN - Math.min(PANEL_MAX_HEIGHT, spaceAbove);
-      transformOrigin = 'bottom center';
+  const renderContent = () => {
+    if (Array.isArray(content)) {
+      if (content.length === 1) {
+        return <p style={{ margin: 0 }}>{content[0]}</p>;
+      }
+      return (
+        <ul style={{ margin: 0, paddingLeft: '1.2rem', listStyle: 'disc' }}>
+          {content.map((item, idx) => (
+            <li key={idx} style={{ marginBottom: idx === content.length - 1 ? 0 : '0.25rem' }}>
+              {item}
+            </li>
+          ))}
+        </ul>
+      );
     }
-  } else {
-    top = idealTop;
-  }
+    return <p style={{ margin: 0 }}>{content}</p>;
+  };
 
-  // ── Clamp so the panel is always fully inside the viewport ──
-  const maxLeft = Math.max(p, vw - PANEL_WIDTH - p);
-  left = Math.max(p, Math.min(left, maxLeft));
-  top  = Math.max(p, Math.min(top, vh - p));
-
-  return { top, left, transformOrigin };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            backgroundColor: theme.bgColor,
+            color: theme.iconColor,
+            flexShrink: 0,
+          }}
+        >
+          <Icon size={14} />
+        </div>
+        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
+          {theme.title}
+        </span>
+      </div>
+      <div
+        style={{
+          fontSize: '0.8125rem',
+          lineHeight: 1.5,
+          color: '#475569',
+          paddingLeft: '2rem',
+        }}
+      >
+        {renderContent()}
+      </div>
+    </div>
+  );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Floating panel (portal child)
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface FloatingPanelProps {
-  triggerRect: DOMRect;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
   resolvedContent: HelpContent;
   title?: string;
   onClose: () => void;
 }
 
-function FloatingHelpPanel({ triggerRect, resolvedContent, title, onClose }: FloatingPanelProps) {
-  const [pos, setPos] = useState<PanelPosition>(() => computePosition(triggerRect));
+function FloatingHelpPanel({ triggerRef, resolvedContent, title, onClose }: FloatingPanelProps) {
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [placement, setPlacement] = useState<'right' | 'left' | 'bottom' | 'top'>('right');
+  const [measured, setMeasured] = useState(false);
   const [visible, setVisible] = useState(false);
+  
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Animate in
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  const updatePosition = useCallback(() => {
+    if (!panelRef.current || !triggerRef.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const panelWidth = panelRef.current.offsetWidth;
+    const panelHeight = panelRef.current.offsetHeight;
 
-  // Recompute on scroll/resize
-  useEffect(() => {
-    const recompute = () => setPos(computePosition(triggerRect));
-    window.addEventListener('scroll', recompute, true);
-    window.addEventListener('resize', recompute);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const p = VIEWPORT_PADDING;
+    const m = PANEL_MARGIN;
+
+    let chosenLeft = 0;
+    let chosenTop = 0;
+    let chosenPlacement: 'right' | 'left' | 'bottom' | 'top' = 'right';
+
+    // 1. TRY RIGHT
+    const rightLeft = triggerRect.right + m;
+    const rightTop = triggerRect.top + triggerRect.height / 2 - panelHeight / 2;
+    const fitsRight = (rightLeft + panelWidth <= vw - p) && (rightTop >= p) && (rightTop + panelHeight <= vh - p);
+
+    // 2. TRY LEFT
+    const leftLeft = triggerRect.left - m - panelWidth;
+    const leftTop = triggerRect.top + triggerRect.height / 2 - panelHeight / 2;
+    const fitsLeft = (leftLeft >= p) && (leftTop >= p) && (leftTop + panelHeight <= vh - p);
+
+    // 3. TRY BOTTOM
+    const bottomLeft = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+    const bottomTop = triggerRect.bottom + m;
+    const fitsBottom = (bottomTop + panelHeight <= vh - p) && (bottomLeft >= p) && (bottomLeft + panelWidth <= vw - p);
+
+    // 4. TRY TOP
+    const topLeft = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+    const topTop = triggerRect.top - m - panelHeight;
+    const fitsTop = (topTop >= p) && (topLeft >= p) && (topLeft + panelWidth <= vw - p);
+
+    if (fitsRight) {
+      chosenLeft = rightLeft;
+      chosenTop = rightTop;
+      chosenPlacement = 'right';
+    } else if (fitsLeft) {
+      chosenLeft = leftLeft;
+      chosenTop = leftTop;
+      chosenPlacement = 'left';
+    } else if (fitsBottom) {
+      chosenLeft = bottomLeft;
+      chosenTop = bottomTop;
+      chosenPlacement = 'bottom';
+    } else if (fitsTop) {
+      chosenLeft = topLeft;
+      chosenTop = topTop;
+      chosenPlacement = 'top';
+    } else {
+      // Fallback: Choose side with most space
+      const spaceRight = vw - triggerRect.right;
+      const spaceLeft = triggerRect.left;
+      const spaceBelow = vh - triggerRect.bottom;
+      const spaceAbove = triggerRect.top;
+
+      const maxSpace = Math.max(spaceRight, spaceLeft, spaceBelow, spaceAbove);
+
+      if (maxSpace === spaceRight) {
+        chosenLeft = triggerRect.right + m;
+        chosenTop = triggerRect.top + triggerRect.height / 2 - panelHeight / 2;
+        chosenPlacement = 'right';
+      } else if (maxSpace === spaceLeft) {
+        chosenLeft = triggerRect.left - m - panelWidth;
+        chosenTop = triggerRect.top + triggerRect.height / 2 - panelHeight / 2;
+        chosenPlacement = 'left';
+      } else if (maxSpace === spaceBelow) {
+        chosenLeft = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+        chosenTop = triggerRect.bottom + m;
+        chosenPlacement = 'bottom';
+      } else {
+        chosenLeft = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+        chosenTop = triggerRect.top - m - panelHeight;
+        chosenPlacement = 'top';
+      }
+
+      // Clamp coordinates to remain fully visible in viewport
+      chosenLeft = Math.max(p, Math.min(chosenLeft, vw - panelWidth - p));
+      chosenTop = Math.max(p, Math.min(chosenTop, vh - panelHeight - p));
+    }
+
+    setCoords({ top: chosenTop, left: chosenLeft });
+    setPlacement(chosenPlacement);
+    setMeasured(true);
+  }, [triggerRef]);
+
+  useLayoutEffect(() => {
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
     return () => {
-      window.removeEventListener('scroll', recompute, true);
-      window.removeEventListener('resize', recompute);
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
     };
-  }, [triggerRect]);
+  }, [updatePosition]);
 
-  // Click-outside & Escape to close
+  // Animate in after measurement is complete
+  useEffect(() => {
+    if (measured) {
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [measured]);
+
+  // Click-outside and Esc handlers
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      // Check if click was outside the panel AND not on the trigger button
+      if (
+        panelRef.current && 
+        !panelRef.current.contains(e.target as Node) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node)
+      ) {
         onClose();
       }
     };
@@ -624,60 +754,72 @@ function FloatingHelpPanel({ triggerRect, resolvedContent, title, onClose }: Flo
       document.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('keydown', handleKey);
     };
-  }, [onClose]);
+  }, [onClose, triggerRef]);
+
+  // Determine origin for scale animation based on placement
+  let transformOrigin = 'center center';
+  if (placement === 'right') transformOrigin = 'left center';
+  else if (placement === 'left') transformOrigin = 'right center';
+  else if (placement === 'bottom') transformOrigin = 'top center';
+  else if (placement === 'top') transformOrigin = 'bottom center';
 
   const panelStyle: React.CSSProperties = {
     position: 'fixed',
-    top: pos.top,
-    left: pos.left,
-    zIndex: 2147483647, // max z-index — always above everything
+    top: coords.top,
+    left: coords.left,
+    zIndex: 2147483647, // max z-index
     width: PANEL_WIDTH,
     maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
-    maxHeight: PANEL_MAX_HEIGHT,
+    maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
     overflowY: 'auto',
-    background: 'var(--surface-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18)',
-    padding: '1rem 1.125rem 1.125rem',
-    fontSize: '0.8125rem',
-    lineHeight: 1.6,
-    color: 'var(--text-secondary)',
+    background: '#ffffff',
+    borderTop: '4px solid var(--accent)',
+    borderRadius: '12px',
+    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+    padding: '1.25rem',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    color: '#334155', // slate-700
     textAlign: 'left',
-    transformOrigin: pos.transformOrigin,
-    // Animate in
+    transformOrigin,
     opacity: visible ? 1 : 0,
-    transform: visible ? 'scale(1) translateY(0)' : 'scale(0.94) translateY(-4px)',
-    transition: 'opacity 0.18s ease, transform 0.18s ease',
+    transform: visible ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(-4px)',
+    transition: measured ? 'opacity 0.15s ease-out, transform 0.15s ease-out' : 'none',
     pointerEvents: 'auto',
-    // Custom scrollbar styling (CSS vars might not apply here so we inline webkit)
     scrollbarWidth: 'thin',
   };
 
-  const sectionStyle: React.CSSProperties = { margin: '0 0 0.5rem' };
-  const strongPrimary: React.CSSProperties = { color: 'var(--text-primary)' };
-  const strongDanger: React.CSSProperties = { color: 'var(--danger)' };
-  const strongSuccess: React.CSSProperties = { color: 'var(--success)' };
-  const listStyle: React.CSSProperties = { margin: '0.25rem 0 0', paddingLeft: '1.1rem' };
+  const mistakesItems = [
+    ...(resolvedContent.mistakes || []),
+    ...(resolvedContent.warning ? [resolvedContent.warning] : []),
+  ];
 
   return (
     <div
       ref={panelRef}
-      role="tooltip"
+      role="dialog"
       aria-label={title || 'Help information'}
       style={panelStyle}
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
     >
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.625rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-          <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          {title && (
-            <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.8125rem', letterSpacing: '0.01em' }}>
-              {title}
-            </span>
-          )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '28px',
+            height: '28px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--accent-subtle)',
+            color: 'var(--accent)',
+          }}>
+            <Info size={16} />
+          </div>
+          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9375rem' }}>
+            {title || 'Help Information'}
+          </span>
         </div>
         <button
           type="button"
@@ -685,84 +827,53 @@ function FloatingHelpPanel({ triggerRect, resolvedContent, title, onClose }: Flo
           aria-label="Close help panel"
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 22, height: 22, borderRadius: '50%',
+            width: 24, height: 24, borderRadius: '50%',
             background: 'transparent',
             border: 'none', cursor: 'pointer', padding: 0,
-            color: 'var(--text-muted)',
+            color: '#94a3b8', // slate-400
             flexShrink: 0,
             transition: 'background 0.15s, color 0.15s',
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-hover)';
-            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+            (e.currentTarget as HTMLButtonElement).style.background = '#f1f5f9';
+            (e.currentTarget as HTMLButtonElement).style.color = '#1e293b';
           }}
           onMouseLeave={e => {
             (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
+            (e.currentTarget as HTMLButtonElement).style.color = '#94a3b8';
           }}
         >
-          <X size={12} />
+          <X size={14} />
         </button>
       </div>
 
       {/* Divider */}
-      <div style={{ height: 1, background: 'var(--border)', marginBottom: '0.625rem', opacity: 0.6 }} />
+      <div style={{ height: 1, background: '#f1f5f9', marginBottom: '1rem' }} />
 
       {/* Content sections */}
-      {resolvedContent.what && (
-        <p style={sectionStyle}>
-          <strong style={strongPrimary}>What is it? </strong>
-          {resolvedContent.what}
-        </p>
-      )}
-      {resolvedContent.why && (
-        <p style={sectionStyle}>
-          <strong style={strongPrimary}>Why is it used? </strong>
-          {resolvedContent.why}
-        </p>
-      )}
-      {resolvedContent.when && (
-        <p style={sectionStyle}>
-          <strong style={strongPrimary}>When should it be used? </strong>
-          {resolvedContent.when}
-        </p>
-      )}
-      {resolvedContent.example && (
-        <p style={sectionStyle}>
-          <strong style={strongPrimary}>Example: </strong>
-          {resolvedContent.example}
-        </p>
-      )}
-      {resolvedContent.warning && (
-        <p style={sectionStyle}>
-          <strong style={strongDanger}>Warning: </strong>
-          {resolvedContent.warning}
-        </p>
-      )}
-      {resolvedContent.steps && resolvedContent.steps.length > 0 && (
-        <div style={sectionStyle}>
-          <strong style={strongPrimary}>Steps:</strong>
-          <ol style={listStyle}>
-            {resolvedContent.steps.map((s, i) => <li key={i}>{s}</li>)}
-          </ol>
-        </div>
-      )}
-      {resolvedContent.bestPractices && resolvedContent.bestPractices.length > 0 && (
-        <div style={sectionStyle}>
-          <strong style={strongSuccess}>Best practice:</strong>
-          <ul style={listStyle}>
-            {resolvedContent.bestPractices.map((s, i) => <li key={i}>{s}</li>)}
-          </ul>
-        </div>
-      )}
-      {resolvedContent.mistakes && resolvedContent.mistakes.length > 0 && (
-        <div>
-          <strong style={strongDanger}>Avoid:</strong>
-          <ul style={listStyle}>
-            {resolvedContent.mistakes.map((s, i) => <li key={i}>{s}</li>)}
-          </ul>
-        </div>
-      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.125rem' }}>
+        {resolvedContent.what && (
+          <HelpSection type="what" content={resolvedContent.what} />
+        )}
+        {resolvedContent.why && (
+          <HelpSection type="why" content={resolvedContent.why} />
+        )}
+        {resolvedContent.when && (
+          <HelpSection type="when" content={resolvedContent.when} />
+        )}
+        {resolvedContent.example && (
+          <HelpSection type="example" content={resolvedContent.example} />
+        )}
+        {resolvedContent.steps && resolvedContent.steps.length > 0 && (
+          <HelpSection type="steps" content={resolvedContent.steps} />
+        )}
+        {resolvedContent.bestPractices && resolvedContent.bestPractices.length > 0 && (
+          <HelpSection type="bestPractices" content={resolvedContent.bestPractices} />
+        )}
+        {mistakesItems.length > 0 && (
+          <HelpSection type="mistakes" content={mistakesItems} />
+        )}
+      </div>
     </div>
   );
 }
@@ -771,41 +882,28 @@ function FloatingHelpPanel({ triggerRect, resolvedContent, title, onClose }: Flo
 // Main HelpIcon export
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface HelpIconProps {
+  text?: string;
+  content?: HelpContent;
+  title?: string;
+  size?: number;
+}
+
 export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
   const [open, setOpen] = useState(false);
-  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const resolvedContent = content || getEnrichedContent(text, title);
 
   // Only portal-render client-side
   useEffect(() => { setMounted(true); }, []);
 
-  const openPanel = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (btnRef.current) {
-      setTriggerRect(btnRef.current.getBoundingClientRect());
-    }
-    setOpen(true);
-  }, []);
-
-  const closePanel = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setOpen(false), 80);
-  }, []);
-
   const togglePanel = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (open) {
-      setOpen(false);
-    } else {
-      openPanel();
-    }
-  }, [open, openPanel]);
-
-  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+    setOpen(prev => !prev);
+  }, []);
 
   return (
     <>
@@ -813,18 +911,15 @@ export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
         ref={btnRef}
         type="button"
         onClick={togglePanel}
-        onMouseEnter={openPanel}
-        onMouseLeave={closePanel}
-        onFocus={openPanel}
-        onBlur={closePanel}
-        title={text || 'Help'}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         aria-expanded={open}
         aria-haspopup="dialog"
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: size + 6, height: size + 6, borderRadius: '50%',
-          background: open ? 'var(--accent-subtle)' : 'transparent',
-          color: open ? 'var(--accent)' : 'var(--text-muted)',
+          background: open ? 'var(--accent-subtle)' : (hovered ? 'var(--surface-hover)' : 'transparent'),
+          color: open ? 'var(--accent)' : (hovered ? 'var(--accent)' : 'var(--text-muted)'),
           border: 'none', cursor: 'pointer', padding: 0,
           outline: 'none',
           verticalAlign: 'middle',
@@ -836,10 +931,10 @@ export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
       </button>
 
       {/* Portal: renders directly into document.body — never clipped */}
-      {mounted && open && triggerRect &&
+      {mounted && open &&
         createPortal(
           <FloatingHelpPanel
-            triggerRect={triggerRect}
+            triggerRef={btnRef}
             resolvedContent={resolvedContent}
             title={title}
             onClose={() => setOpen(false)}
@@ -850,3 +945,4 @@ export function HelpIcon({ text, content, title, size = 14 }: HelpIconProps) {
     </>
   );
 }
+

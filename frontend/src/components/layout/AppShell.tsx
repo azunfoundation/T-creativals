@@ -444,7 +444,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Mobile Menu Button */}
             <button
-              className="topbar-mobile-menu-btn"
+              className="topbar-mobile-menu-btn mobile-only"
               onClick={() => setMobileMenuOpen(true)}
               title="Open Menu"
               aria-label="Open Menu"
@@ -495,7 +495,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={() => setQuickCreateOpen((p) => !p)}
                 >
                   <Plus size={14} strokeWidth={2.5} />
-                  New
+                  <span>New</span>
                   <ChevronDown size={12} />
                 </button>
                 {quickCreateOpen && (
@@ -531,7 +531,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <Link href="/ai">
                   <button className="topbar-ai-btn" title="AI Assistant">
                     <Sparkles size={13} />
-                    AI
+                    <span>AI</span>
                   </button>
                 </Link>
               )}

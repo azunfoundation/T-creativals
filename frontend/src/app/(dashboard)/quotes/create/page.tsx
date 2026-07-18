@@ -123,7 +123,8 @@ function QuoteBuilderForm() {
       const data = res.data || [];
       return data.map((s: any) => ({
         ...s,
-        base_price: s.base_price || s.default_price || 0
+        base_price: Number(s.base_price || s.default_price || 0),
+        tax_rate: s.tax_rate !== null && s.tax_rate !== undefined ? Number(s.tax_rate) : undefined
       }));
     }
   });
@@ -193,7 +194,7 @@ function QuoteBuilderForm() {
             quantity: item.quantity || 1,
             unit_price: item.unit_price || 0,
             discount_percent: item.discount_percent || 0,
-            tax_rate: item.tax_rate ?? 18,
+            tax_rate: item.tax_rate !== undefined && item.tax_rate !== null ? Number(item.tax_rate) : 18,
           }))
         );
       }
@@ -209,6 +210,19 @@ function QuoteBuilderForm() {
       }
     }
   }, [editQuote]);
+
+  // Set default tax rate for new quotes once settings are loaded
+  useEffect(() => {
+    if (!isEdit && settings?.tax?.default_tax_rate !== undefined) {
+      const defaultTax = Number(settings.tax.default_tax_rate);
+      setLineItems(prev => {
+        if (prev.length === 1 && prev[0].service_id === '' && prev[0].unit_price === 0 && prev[0].tax_rate === 18) {
+          return [{ ...prev[0], tax_rate: defaultTax }];
+        }
+        return prev;
+      });
+    }
+  }, [settings, isEdit]);
 
   // Handle lead_id query param auto-selection (only on create)
   useEffect(() => {
@@ -237,7 +251,9 @@ function QuoteBuilderForm() {
         if (found) {
           updated[index].description = found.description || found.name;
           updated[index].unit_price = found.base_price;
-          updated[index].tax_rate = found.tax_rate ?? 18;
+          updated[index].tax_rate = found.tax_rate !== undefined && found.tax_rate !== null 
+            ? Number(found.tax_rate) 
+            : (settings?.tax?.default_tax_rate !== undefined ? Number(settings.tax.default_tax_rate) : 18);
         }
       }
       return updated;
@@ -256,9 +272,10 @@ function QuoteBuilderForm() {
   };
 
   const addLineItem = () => {
+    const defaultTaxRate = settings?.tax?.default_tax_rate !== undefined ? Number(settings.tax.default_tax_rate) : 18;
     setLineItems(prev => [
       ...prev,
-      { service_id: '', description: '', quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 18 }
+      { service_id: '', description: '', quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: defaultTaxRate }
     ]);
   };
 

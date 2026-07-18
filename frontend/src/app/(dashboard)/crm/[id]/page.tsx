@@ -412,12 +412,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         
         {/* ============================================================
             LEFT PANEL: Profile & Contacts (lg:col-span-3)
             ============================================================ */}
-        <div className="lg:col-span-3 flex flex-col gap-5">
+        <div className="xl:col-span-3 flex flex-col gap-5">
           
           {/* Metadata Card */}
           <div className="card">
@@ -756,7 +756,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* ============================================================
             CENTER PANEL: Activity Timeline (lg:col-span-6)
             ============================================================ */}
-        <div className="lg:col-span-6 flex flex-col gap-6">
+        <div className="xl:col-span-6 flex flex-col gap-6">
           
           {/* Quick Logger Form */}
           <div className="card">
@@ -890,7 +890,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* ============================================================
             RIGHT PANEL: Actions & Follow-ups (lg:col-span-3)
             ============================================================ */}
-        <div className="lg:col-span-3 flex flex-col gap-6">
+        <div className="xl:col-span-3 flex flex-col gap-6">
           
           {/* Main Actions */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>

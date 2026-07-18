@@ -6,6 +6,7 @@ import { X, Eye, EyeOff, MailPlus, CheckCircle } from 'lucide-react';
 import { users as usersApi, getApiErrorMessage } from '@/lib/api';
 import type { User, Role, Department } from '@/lib/api';
 import { HelpIcon } from '@/components/ui/HelpIcon';
+import { useAuthStore } from '@/store/auth';
 
 interface UserFormModalProps {
   user: User | null;
@@ -27,6 +28,7 @@ interface FormState {
   role_ids: number[];
   department_ids: number[];
   manager_ids: number[];
+  hourly_rate: string;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -39,9 +41,13 @@ const DEFAULT_FORM: FormState = {
   role_ids: [],
   department_ids: [],
   manager_ids: [],
+  hourly_rate: '',
 };
 
 export default function UserFormModal({ user, roles, departments, allUsers, onClose, onSuccess }: UserFormModalProps) {
+  const { user: currentUser } = useAuthStore();
+  const isFounder = currentUser?.roles?.some((r: any) => (typeof r === 'string' ? r : r?.name) === 'founder');
+
   const isEdit = user !== null;
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [showPassword, setShowPassword] = useState(false);
@@ -75,6 +81,7 @@ export default function UserFormModal({ user, roles, departments, allUsers, onCl
         role_ids: user.roles.map((r) => r.id),
         department_ids: user.departments.map((d) => d.id),
         manager_ids: (fullUser?.managers || []).map((m) => m.id),
+        hourly_rate: user.hourly_rate ? String(user.hourly_rate) : '',
       });
     } else {
       setForm(DEFAULT_FORM);
@@ -93,6 +100,7 @@ export default function UserFormModal({ user, roles, departments, allUsers, onCl
         role_ids: data.role_ids,
         department_ids: data.department_ids,
         manager_ids: data.manager_ids,
+        hourly_rate: data.hourly_rate ? Number(data.hourly_rate) : undefined,
       }),
     onSuccess,
     onError: (err: unknown) => {
@@ -135,6 +143,7 @@ export default function UserFormModal({ user, roles, departments, allUsers, onCl
         role_ids: data.role_ids,
         department_ids: data.department_ids,
         manager_ids: data.manager_ids,
+        hourly_rate: data.hourly_rate ? Number(data.hourly_rate) : undefined,
       }),
     onSuccess,
     onError: (err: unknown) => {
@@ -358,21 +367,42 @@ export default function UserFormModal({ user, roles, departments, allUsers, onCl
               </div>
             </div>
 
-            {/* Status */}
-            <div className="form-group">
-              <label className="form-label" htmlFor="user-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                Status
-                <HelpIcon text="Active users can sign in. Set to Inactive to block sign-in without deleting the person's history — use this when someone leaves." />
-              </label>
-              <select
-                id="user-status"
-                value={form.status}
-                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as 'active' | 'inactive' }))}
-                className="form-input"
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+            {/* Status & Per Hour Price */}
+            <div style={{ display: 'grid', gridTemplateColumns: isFounder ? '1fr 1fr' : '1fr', gap: '0.875rem' }}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="user-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  Status
+                  <HelpIcon text="Active users can sign in. Set to Inactive to block sign-in without deleting the person's history — use this when someone leaves." />
+                </label>
+                <select
+                  id="user-status"
+                  value={form.status}
+                  onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as 'active' | 'inactive' }))}
+                  className="form-input"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              {isFounder && (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="user-hourly-rate" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Per Hour Price (INR)
+                    <HelpIcon text="Set the billing rate per hour for this individual. If set, this rate will override general defaults." />
+                  </label>
+                  <input
+                    id="user-hourly-rate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="e.g. 500"
+                    value={form.hourly_rate}
+                    onChange={(e) => setForm((p) => ({ ...p, hourly_rate: e.target.value }))}
+                    className="form-input"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Roles (checkbox list) */}

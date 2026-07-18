@@ -34,6 +34,7 @@ class ProjectResource extends JsonResource
                 'email' => $this->manager->email,
             ] : null),
             'status' => $this->status,
+            'priority' => $this->priority ?? 'medium',
             'start_date' => $this->start_date?->toDateString(),
             'end_date' => $this->end_date?->toDateString(),
             'budget_hours' => $this->budget_hours,

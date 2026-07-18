@@ -265,7 +265,7 @@ export default function InvoicesDashboard() {
               <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 TOTAL INVOICED
               </span>
-              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalInvoiced)}</span>
+              <span className="kpi-value" style={{ display: 'block', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalInvoiced)}</span>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{allInvoices.filter(i => !['void', 'cancelled'].includes(i.status)).length}</span> Active Invoices
               </div>
@@ -287,7 +287,7 @@ export default function InvoicesDashboard() {
               <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 PAYMENTS COLLECTED
               </span>
-              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalCollected)}</span>
+              <span className="kpi-value" style={{ display: 'block', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalCollected)}</span>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 Collection Rate: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0}%</span>
               </div>
@@ -309,7 +309,7 @@ export default function InvoicesDashboard() {
               <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 OUTSTANDING BALANCE
               </span>
-              <span className="kpi-value" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOutstanding)}</span>
+              <span className="kpi-value" style={{ display: 'block', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOutstanding)}</span>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 Pending user logs & collections
               </div>
@@ -331,7 +331,7 @@ export default function InvoicesDashboard() {
               <span className="kpi-label" style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 OVERDUE RECEIVABLES
               </span>
-              <span className="kpi-value text-danger" style={{ display: 'block', fontSize: '1.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOverdue)}</span>
+              <span className="kpi-value text-danger" style={{ display: 'block', marginTop: '0.25rem', marginBottom: '0.25rem' }}>{formatCurrency(totalOverdue)}</span>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 Needs follow up action
               </div>

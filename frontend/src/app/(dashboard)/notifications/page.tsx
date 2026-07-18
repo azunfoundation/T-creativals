@@ -409,7 +409,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Main Page Layout Grid (Split Sidebar and List) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '1.5rem', alignItems: 'start' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6 items-start">
         
         {/* Left Filter Sidebar */}
         <div className="card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>

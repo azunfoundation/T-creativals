@@ -1045,7 +1045,7 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                         }}
                       >
                         <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{entry.user?.name || 'Team Member'}</div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{entry.user_name || entry.user?.name || 'Team Member'}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                             {entry.description || 'No description provided'}
                           </div>

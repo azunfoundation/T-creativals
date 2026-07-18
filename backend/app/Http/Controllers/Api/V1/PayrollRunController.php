@@ -91,11 +91,11 @@ class PayrollRunController extends Controller
                 $comp = $employee->compensation;
                 $hourlyRate = $employee->hourly_rate; // utilizes our getHourlyRateAttribute()
                 
-                // Fetch timesheet hours approved for this employee in the month/year
+                // Fetch timesheet hours submitted or approved for this employee in the month/year
                 $hoursLogged = (float) Timesheet::where('user_id', $employee->id)
                     ->whereYear('date', $year)
                     ->whereMonth('date', $month)
-                    ->where('status', 'approved')
+                    ->whereIn('status', ['submitted', 'approved'])
                     ->sum('hours_logged');
 
                 // Determine base salary based on compensation type
@@ -270,11 +270,11 @@ class PayrollRunController extends Controller
             60,
             function () use ($year, $month) {
 
-        // Fetch all approved timesheets for the period
+        // Fetch all submitted or approved timesheets for the period
         $timesheets = Timesheet::with(['user.compensation', 'project'])
             ->whereYear('date', $year)
             ->whereMonth('date', $month)
-            ->where('status', 'approved')
+            ->whereIn('status', ['submitted', 'approved'])
             ->whereNotNull('project_id')
             ->get();
 
@@ -407,4 +407,33 @@ class PayrollRunController extends Controller
 
         return response()->json($items);
     }
+
+    public function destroy(PayrollRun $payrollRun): JsonResponse
+    {
+        if (!Gate::allows('delete', $payrollRun)) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        DB::transaction(function () use ($payrollRun) {
+            // Revert linked bonuses back to approved status and clear payroll run ID
+            Bonus::where('payroll_run_id', $payrollRun->id)
+                ->update([
+                    'status' => 'approved',
+                    'payroll_run_id' => null,
+                ]);
+
+            // Delete associated items and their adjustments
+            $itemIds = $payrollRun->items()->pluck('id');
+            \App\Models\PayrollAdjustment::whereIn('payroll_run_item_id', $itemIds)->delete();
+            $payrollRun->items()->delete();
+
+            // Finally, delete the payroll run (soft delete)
+            $payrollRun->delete();
+        });
+
+        return response()->json([
+            'message' => 'Payroll run deleted successfully.'
+        ]);
+    }
 }
+

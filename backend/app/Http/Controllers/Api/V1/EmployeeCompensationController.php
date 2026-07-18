@@ -72,7 +72,7 @@ class EmployeeCompensationController extends Controller
 
             return EmployeeCompensation::create([
                 ...$validated,
-                'expected_monthly_hours' => $validated['expected_monthly_hours'] ?? 0,
+                'expected_monthly_hours' => $validated['expected_monthly_hours'] ?? 200.00,
                 'hourly_rate' => $validated['hourly_rate'] ?? 0,
                 'is_current' => true,
             ]);

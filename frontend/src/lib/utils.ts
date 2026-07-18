@@ -39,7 +39,25 @@ export function formatCurrency(amount: number | string | null | undefined, curre
 }
 
 export function formatDate(date: string | Date): string {
+  if (!date) return '—';
+  
+  // Hand-parse standard ISO date format YYYY-MM-DD to avoid timezone conversion shift
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+    const parts = date.split('T')[0].split('-');
+    const year = parseInt(parts[0], 10);
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${day.toString().padStart(2, '0')} ${months[monthIdx]}, ${year}`;
+    }
+  }
+
   const d = new Date(date);
+  if (isNaN(d.getTime())) return '—';
   const day = d.getDate().toString().padStart(2, '0');
   const months = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -47,7 +65,32 @@ export function formatDate(date: string | Date): string {
   ];
   const month = months[d.getMonth()];
   const year = d.getFullYear();
-  return `${day} ${month} ${year}`;
+  return `${day} ${month}, ${year}`;
+}
+
+export function formatToInputDate(dateStr?: string | Date | null): string {
+  if (!dateStr) return '';
+  const str = typeof dateStr === 'string' ? dateStr : new Date(dateStr).toISOString();
+  const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+}
+
+export function calculateDuration(startDateStr?: string, endDateStr?: string): string {
+  if (!startDateStr || !endDateStr) return '—';
+  const start = new Date(startDateStr.split('T')[0]);
+  const end = new Date(endDateStr.split('T')[0]);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return '—';
+  
+  const diffTime = end.getTime() - start.getTime();
+  if (diffTime < 0) return '—';
+  
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  if (diffDays < 30) {
+    return `${diffDays} Day${diffDays !== 1 ? 's' : ''}`;
+  }
+  
+  const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  return `${diffMonths} Month${diffMonths !== 1 ? 's' : ''}`;
 }
 
 export function formatRelativeTime(date: string | Date): string {

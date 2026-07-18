@@ -559,9 +559,12 @@ export default function TimesheetsPage() {
     return timesheetsData.filter(entry => {
       // Search filter
       if (searchQuery) {
-        const descMatch = entry.description?.toLowerCase().includes(searchQuery.toLowerCase());
-        const userMatch = entry.user?.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const projMatch = entry.project?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const uName = entry.user_name || entry.user?.name || '';
+        const pName = entry.project_name || entry.project?.name || '';
+        const desc = entry.description || '';
+        const descMatch = desc.toLowerCase().includes(searchQuery.toLowerCase());
+        const userMatch = uName.toLowerCase().includes(searchQuery.toLowerCase());
+        const projMatch = pName.toLowerCase().includes(searchQuery.toLowerCase());
         if (!descMatch && !userMatch && !projMatch) return false;
       }
 
@@ -795,7 +798,7 @@ export default function TimesheetsPage() {
             <div className="min-w-0 flex flex-col gap-5">
 
               {/* Stat cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-4">
                 {/* Week Total Hours */}
                 <div className="rounded-2xl p-4 flex items-center gap-3.5 bg-violet-50 dark:bg-violet-500/10 border border-violet-100 dark:border-violet-500/20">
                   <div className="w-11 h-11 rounded-full bg-white dark:bg-white/10 shadow-sm flex items-center justify-center shrink-0">
@@ -1229,8 +1232,8 @@ export default function TimesheetsPage() {
                   <p className="text-sm text-zinc-400 py-6 text-center">No activity yet — log your first hours to get started.</p>
                 )}
                 {recentActivities.map((entry, i) => {
-                  const projName = entry.project?.name || projects.find(p => p.id === entry.project_id)?.name || `Project #${entry.project_id}`;
-                  const userName = entry.user?.name || 'A team member';
+                  const projName = entry.project_name || entry.project?.name || projects.find(p => p.id === entry.project_id)?.name || `Project #${entry.project_id}`;
+                  const userName = entry.user_name || entry.user?.name || 'A team member';
                   const hrs = fmtHrs(parseFloat(entry.hours as any) || 0);
                   const meta = {
                     draft: { text: `logged ${hrs}h to ${projName}`, badge: 'Logged', cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' },
@@ -1380,16 +1383,16 @@ export default function TimesheetsPage() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <div className="avatar avatar-sm">
-                            {getInitials(entry.user?.name || 'User')}
+                            {getInitials(entry.user_name || entry.user?.name || 'User')}
                           </div>
-                          <span style={{ fontSize: '0.8125rem' }}>{entry.user?.name || 'Member'}</span>
+                          <span style={{ fontSize: '0.8125rem' }}>{entry.user_name || entry.user?.name || 'Member'}</span>
                         </div>
                       </td>
                       <td>
-                        <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{entry.project?.name || `Project #${entry.project_id}`}</span>
+                        <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{entry.project_name || entry.project?.name || `Project #${entry.project_id}`}</span>
                       </td>
                       <td>
-                        <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{entry.task?.title || 'General Scope'}</span>
+                        <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{entry.task_title || entry.task?.title || 'General Scope'}</span>
                       </td>
                       <td style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entry.description || '—'}

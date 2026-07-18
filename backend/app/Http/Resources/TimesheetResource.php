@@ -31,6 +31,26 @@ class TimesheetResource extends JsonResource
             'task_title' => $this->task?->title,
             'project_name' => $this->project?->name,
             'approved_by_name' => $this->approver?->name,
+
+            'user' => $this->whenLoaded('user', function () {
+                return [
+                    'id' => $this->user->id,
+                    'name' => $this->user->name,
+                    'email' => $this->user->email,
+                ];
+            }),
+            'project' => $this->whenLoaded('project', function () {
+                return [
+                    'id' => $this->project->id,
+                    'name' => $this->project->name,
+                ];
+            }),
+            'task' => $this->whenLoaded('task', function () {
+                return [
+                    'id' => $this->task->id,
+                    'title' => $this->task->title,
+                ];
+            }),
         ];
     }
 }

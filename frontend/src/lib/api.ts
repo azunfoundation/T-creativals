@@ -122,6 +122,7 @@ export interface User {
   status: 'active' | 'inactive';
   employee_id?: string;
   phone?: string;
+  hourly_rate?: number;
 }
 
 export interface RolePermission {
@@ -399,6 +400,7 @@ export interface CreateUserData {
   /** Reporting lines — ids of the managers this user reports to (first = primary). */
   manager_ids?: number[];
   is_client_portal_user?: boolean;
+  hourly_rate?: number;
 }
 
 export interface UpdateUserData {
@@ -412,6 +414,7 @@ export interface UpdateUserData {
   /** Reporting lines — ids of the managers this user reports to (first = primary). */
   manager_ids?: number[];
   is_client_portal_user?: boolean;
+  hourly_rate?: number;
 }
 
 export const users = {
@@ -1106,6 +1109,7 @@ export interface Project {
   manager_id?: number;
   manager?: { id: number; name: string; email: string } | null;
   status: 'planning' | 'in_progress' | 'active' | 'on_hold' | 'completed' | 'cancelled';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
   completion_percentage: number;
   start_date: string;
   end_date: string;
@@ -1192,10 +1196,13 @@ export interface Timesheet {
   id: number;
   user_id: number;
   user?: User;
+  user_name?: string;
   project_id: number;
   project?: Project;
+  project_name?: string;
   task_id?: number;
   task?: Task;
+  task_title?: string;
   date: string;
   hours: number;
   description?: string;
@@ -1551,6 +1558,7 @@ export const payroll = {
   myHistory: (params?: { per_page?: number }) => api.get<LaravelPaginatedResponse<PayrollRunItem>>('/payroll/my-history', { params }),
   downloadPayslip: (itemId: number) => api.get<Blob>(`/payroll/items/${itemId}/download-payslip`, { responseType: 'blob' }),
   exportRun: (runId: number, format: 'csv' | 'pdf') => api.get<Blob>(`/payroll/runs/${runId}/export`, { params: { format }, responseType: 'blob' }),
+  deleteRun: (id: number) => api.delete<{ message: string }>(`/payroll/runs/${id}`),
 };
 
 export const compensationTypesApi = {

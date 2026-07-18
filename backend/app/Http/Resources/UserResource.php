@@ -26,6 +26,7 @@ class UserResource extends JsonResource
                     : asset('storage/' . $this->avatar_url))
                 : null,
             'status'      => $this->status,
+            'hourly_rate' => (float) ($this->hourly_rate ?? 0.00),
 
             // Roles: array of role objects
             'roles' => $this->roles->map(fn($role) => [

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { services as servicesApi, serviceCategories as categoriesApi, packages as packagesApi, platformSettings, getApiErrorMessage } from '@/lib/api';
 import type { Service, ServiceCategory, Package } from '@/lib/api';
@@ -1085,14 +1085,31 @@ function ServiceFormModal({
 }) {
   const isEdit = service !== null;
   const { showToast } = useToast();
+
+  const { data: settings } = useQuery({
+    queryKey: ['platform_settings'],
+    queryFn: async () => (await platformSettings.get()).data,
+  });
+
   const [form, setForm] = useState<ServiceForm>({
     category_id: service?.category_id || (categories[0]?.id || 1),
     name: service?.name || '',
     description: service?.description || '',
     base_price: service?.base_price || 0,
     unit: service?.unit || 'hour',
-    tax_rate: service?.tax_rate ?? 18,
+    tax_rate: service?.tax_rate !== undefined && service?.tax_rate !== null ? Number(service.tax_rate) : 18,
   });
+
+  useEffect(() => {
+    if (!isEdit && settings?.tax?.default_tax_rate !== undefined) {
+      setForm(prev => {
+        if (prev.tax_rate === 18) {
+          return { ...prev, tax_rate: Number(settings.tax.default_tax_rate) };
+        }
+        return prev;
+      });
+    }
+  }, [settings, isEdit]);
 
   const [errors, setErrors] = useState<Partial<Record<keyof ServiceForm, string>>>({});
 

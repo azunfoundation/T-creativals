@@ -829,13 +829,13 @@ export default function QuotesPage() {
           <p className="font-semibold text-sm">Failed to load quotes summary. Please make sure the backend is running and try again.</p>
         </div>
       ) : isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="skeleton" style={{ height: 110, borderRadius: 'var(--radius-lg)' }} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
           {/* Total Quotes */}
           <div className="kpi-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -991,10 +991,10 @@ export default function QuotesPage() {
       </div>
 
       {/* ── Main content grid (Table left, Sidebar right) ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
         
         {/* Table & Pagination (Left 3 cols) */}
-        <div className="xl:col-span-3 flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           {isError ? (
             <div className="card text-center p-8 shadow-sm" style={{ color: 'var(--danger)', borderColor: 'var(--danger-subtle)' }}>
               <AlertCircle size={32} style={{ margin: '0 auto 0.5rem' }} />
@@ -1417,7 +1417,7 @@ export default function QuotesPage() {
         </div>
 
         {/* Sidebar (Right 1 col) */}
-        <div className="xl:col-span-1 flex flex-col gap-6">
+        <div className="flex flex-col gap-6">
           
           {/* Quote Overview (Donut Chart) */}
           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

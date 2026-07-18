@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, LayoutGrid, List, Filter, X,
   Calendar, DollarSign, UserCheck, Briefcase,
-  ArrowUpDown, ExternalLink, Check, Trash2, Clock,
+  ArrowUpDown, ExternalLink, Check, Trash2, Clock, Edit2,
   ArrowRight, Users, CheckCircle2, AlertCircle,
   Rocket, TrendingUp, FolderOpen, PieChart, Info,
   MoreVertical
@@ -128,6 +128,13 @@ export default function ProjectsPage() {
   const [newBudgetAmount, setNewBudgetAmount] = useState('');
   const [newDescription, setNewDescription] = useState('');
 
+  // Dropdown options state
+  const [activeProjectMenuId, setActiveProjectMenuId] = useState<number | null>(null);
+
+  // Edit states
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [newStatus, setNewStatus] = useState<Project['status']>('planning');
+
   // ============================================================
   // Queries
   // ============================================================
@@ -197,6 +204,15 @@ export default function ProjectsPage() {
     }
   });
 
+  const updateProjectMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => projectsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setShowDrawer(false);
+      resetForm();
+    }
+  });
+
   const deleteProjectMutation = useMutation({
     mutationFn: (id: number) => projectsApi.delete(id),
     onSuccess: () => {
@@ -242,9 +258,26 @@ export default function ProjectsPage() {
     setNewBudgetHours('');
     setNewBudgetAmount('');
     setNewDescription('');
+    setNewStatus('planning');
+    setEditingProject(null);
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const openEditDrawer = (project: Project) => {
+    setEditingProject(project);
+    setNewName(project.name);
+    setNewClientId(project.client_id ? project.client_id.toString() : '');
+    setNewInvoiceId(project.invoice_id ? project.invoice_id.toString() : '');
+    setNewManagerId(project.manager_id ? project.manager_id.toString() : '');
+    setNewStartDate(project.start_date ? project.start_date.split('T')[0] : '');
+    setNewEndDate(project.end_date ? project.end_date.split('T')[0] : '');
+    setNewBudgetHours(project.budget_hours ? project.budget_hours.toString() : '');
+    setNewBudgetAmount(project.budget_amount !== undefined ? project.budget_amount.toString() : (project.budget ? project.budget.toString() : ''));
+    setNewDescription(project.description || '');
+    setNewStatus(project.status);
+    setShowDrawer(true);
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     const payload = {
@@ -257,11 +290,17 @@ export default function ProjectsPage() {
       budget_hours: parseFloat(newBudgetHours) || 0,
       budget_amount: parseFloat(newBudgetAmount) || 0,
       description: newDescription,
-      status: 'planning',
-      completion_percentage: 0
+      status: editingProject ? newStatus : 'planning',
     };
 
-    createProjectMutation.mutate(payload);
+    if (editingProject) {
+      updateProjectMutation.mutate({ id: editingProject.id, data: payload });
+    } else {
+      createProjectMutation.mutate({
+        ...payload,
+        completion_percentage: 0
+      });
+    }
   };
 
   const handleDragStart = (id: number) => {
@@ -333,9 +372,9 @@ export default function ProjectsPage() {
                 <Briefcase size={18} style={{ color: 'var(--accent)' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TOTAL PROJECTS</span>
-                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem' }}>{totalProjectsCount}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>All Projects</span>
+                <span className="kpi-label" style={{ color: 'var(--text-muted)' }}>TOTAL PROJECTS</span>
+                <span className="kpi-value" style={{ marginTop: '0.25rem' }}>{totalProjectsCount}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>All Projects</span>
               </div>
             </div>
             <div style={{ marginLeft: 'auto' }}>
@@ -361,7 +400,7 @@ export default function ProjectsPage() {
               </svg>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
             <span style={{ color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
               <ArrowRight size={12} style={{ transform: 'rotate(-45deg)' }} /> 12.5%
             </span>
@@ -377,9 +416,9 @@ export default function ProjectsPage() {
                 <Rocket size={18} style={{ color: 'var(--accent)' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ACTIVE PROJECTS</span>
-                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem', color: 'var(--accent)' }}>{activeCount}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ongoing</span>
+                <span className="kpi-label" style={{ color: 'var(--text-muted)' }}>ACTIVE PROJECTS</span>
+                <span className="kpi-value" style={{ marginTop: '0.25rem', color: 'var(--accent)' }}>{activeCount}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Ongoing</span>
               </div>
             </div>
             <div style={{ marginLeft: 'auto' }}>
@@ -398,7 +437,7 @@ export default function ProjectsPage() {
               </svg>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
             <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
               — 0%
             </span>
@@ -414,9 +453,9 @@ export default function ProjectsPage() {
                 <Check size={18} style={{ color: 'var(--success)' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>COMPLETED PROJECTS</span>
-                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem', color: 'var(--success)' }}>{completedCount}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Delivered</span>
+                <span className="kpi-label" style={{ color: 'var(--text-muted)' }}>COMPLETED PROJECTS</span>
+                <span className="kpi-value" style={{ marginTop: '0.25rem', color: 'var(--success)' }}>{completedCount}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Delivered</span>
               </div>
             </div>
             <div style={{ marginLeft: 'auto' }}>
@@ -435,7 +474,7 @@ export default function ProjectsPage() {
               </svg>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
             <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
               — 0%
             </span>
@@ -448,12 +487,12 @@ export default function ProjectsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
               <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--warning-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--warning)' }}>₹</span>
+                <span style={{ fontWeight: 700, color: 'var(--warning)' }}>₹</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="kpi-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TOTAL BUDGET</span>
-                <span className="kpi-value" style={{ fontSize: '1.75rem', marginTop: '0.25rem' }}>{formatCurrency(totalBudgetVal)}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Portfolio Value</span>
+                <span className="kpi-label" style={{ color: 'var(--text-muted)' }}>TOTAL BUDGET</span>
+                <span className="kpi-value" style={{ marginTop: '0.25rem' }}>{formatCurrency(totalBudgetVal)}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Portfolio Value</span>
               </div>
             </div>
             <div style={{ marginLeft: 'auto' }}>
@@ -726,13 +765,115 @@ export default function ProjectsPage() {
                           <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}>
                             View Details
                           </Link>
-                          <button
-                            onClick={async () => { if (await confirm({ message: 'Are you sure you want to delete this project?', variant: 'danger' })) deleteProjectMutation.mutate(project.id); }}
-                            className="btn btn-secondary btn-sm btn-icon"
-                            style={{ padding: '0.375rem', border: 'none', background: 'transparent', color: 'var(--text-secondary)' }}
-                          >
-                            <MoreVertical size={16} />
-                          </button>
+                          <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <button
+                              id={`more-actions-btn-${project.id}`}
+                              onClick={() => setActiveProjectMenuId(activeProjectMenuId === project.id ? null : project.id)}
+                              className="btn btn-secondary btn-sm btn-icon"
+                              style={{ padding: '0.375rem', border: 'none', background: 'transparent', color: 'var(--text-secondary)' }}
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                            
+                            {activeProjectMenuId === project.id && (
+                              <>
+                                {/* Backdrop click closer */}
+                                <div
+                                  onClick={() => setActiveProjectMenuId(null)}
+                                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
+                                />
+                                
+                                {/* Dropdown Menu Container */}
+                                <div style={{
+                                  position: 'absolute',
+                                  top: '100%',
+                                  right: 0,
+                                  marginTop: '0.25rem',
+                                  background: 'var(--surface-elevated)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 'var(--radius-md)',
+                                  boxShadow: 'var(--shadow-md)',
+                                  zIndex: 50,
+                                  minWidth: '170px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  padding: '0.25rem 0',
+                                }}>
+                                  {/* View Details Link */}
+                                  <Link
+                                    href={`/projects/${project.id}`}
+                                    onClick={() => setActiveProjectMenuId(null)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.5rem',
+                                      width: '100%',
+                                      padding: '0.5rem 0.875rem',
+                                      fontSize: '0.8125rem',
+                                      color: 'var(--text-primary)',
+                                      textAlign: 'left',
+                                    }}
+                                    className="hover:bg-[var(--surface-hover)]"
+                                  >
+                                    <ExternalLink size={14} />
+                                    View Details
+                                  </Link>
+
+                                  {/* Edit Project Link */}
+                                  <button
+                                    onClick={() => {
+                                      setActiveProjectMenuId(null);
+                                      openEditDrawer(project);
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.5rem',
+                                      width: '100%',
+                                      padding: '0.5rem 0.875rem',
+                                      fontSize: '0.8125rem',
+                                      color: 'var(--text-primary)',
+                                      textAlign: 'left',
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                    }}
+                                    className="hover:bg-[var(--surface-hover)]"
+                                  >
+                                    <Edit2 size={14} />
+                                    Edit Project
+                                  </button>
+
+                                  {/* Delete Project Action */}
+                                  <button
+                                    onClick={async () => {
+                                      setActiveProjectMenuId(null);
+                                      if (await confirm({ message: 'Are you sure you want to delete this project?', variant: 'danger' })) {
+                                        deleteProjectMutation.mutate(project.id);
+                                      }
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.5rem',
+                                      width: '100%',
+                                      padding: '0.5rem 0.875rem',
+                                      fontSize: '0.8125rem',
+                                      color: 'var(--danger)',
+                                      textAlign: 'left',
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                    }}
+                                    className="hover:bg-[var(--surface-hover)]"
+                                  >
+                                    <Trash2 size={14} style={{ color: 'var(--danger)' }} />
+                                    Delete Project
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -936,11 +1077,15 @@ export default function ProjectsPage() {
             {/* Header */}
             <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ fontSize: '1.0625rem', fontWeight: 700, color: 'var(--text-primary)' }}>Create New Project</h2>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Fill in the fields below to schedule a new contract pipeline.</p>
+                <h2 style={{ fontSize: '1.0625rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {editingProject ? 'Edit Project' : 'Create New Project'}
+                </h2>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {editingProject ? 'Modify the project details below.' : 'Fill in the fields below to schedule a new contract pipeline.'}
+                </p>
               </div>
               <button
-                onClick={() => setShowDrawer(false)}
+                onClick={() => { setShowDrawer(false); resetForm(); }}
                 style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', borderRadius: 'var(--radius-sm)' }}
                 className="hover:text-primary hover:bg-surface-elevated"
               >
@@ -949,7 +1094,7 @@ export default function ProjectsPage() {
             </div>
 
             {/* Form Scroll Body */}
-            <form onSubmit={handleCreateSubmit} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleFormSubmit} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Project Name *</label>
                 <input
@@ -1021,6 +1166,25 @@ export default function ProjectsPage() {
                   ))}
                 </select>
               </div>
+
+              {editingProject && (
+                <div className="form-group">
+                  <label className="form-label">Status *</label>
+                  <select
+                    required
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value as Project['status'])}
+                    className="form-input"
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="active">Active</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
@@ -1099,10 +1263,12 @@ export default function ProjectsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={createProjectMutation.isPending}
+                  disabled={editingProject ? updateProjectMutation.isPending : createProjectMutation.isPending}
                   className="btn btn-primary"
                 >
-                  {createProjectMutation.isPending ? 'Saving...' : 'Create Project'}
+                  {editingProject
+                    ? (updateProjectMutation.isPending ? 'Saving...' : 'Save Changes')
+                    : (createProjectMutation.isPending ? 'Saving...' : 'Create Project')}
                 </button>
               </div>
             </form>

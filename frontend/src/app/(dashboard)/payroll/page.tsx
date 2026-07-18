@@ -11,7 +11,8 @@ import { useToast } from '@/hooks/useToast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Banknote, Calendar, CheckCircle, Clock, XCircle, X,
-  Plus, Users, Award, ShieldAlert, FileText, TrendingUp, Download, AlertCircle, Settings, ExternalLink
+  Plus, Users, Award, ShieldAlert, FileText, TrendingUp, Download, AlertCircle, Settings, ExternalLink,
+  Trash2
 } from 'lucide-react';
 import {
   payroll as payrollApi,
@@ -156,7 +157,7 @@ export default function PayrollDashboard() {
     enabled: mainView === 'salary',
     queryFn: async () => {
       const res = await employeeCompensationApi.list();
-      return res.data.data;
+      return (res.data as any).data ?? res.data;
     }
   });
 
@@ -165,7 +166,7 @@ export default function PayrollDashboard() {
     enabled: mainView === 'salary' || showCompensationModal,
     queryFn: async () => {
       const res = await compensationTypesApi.list();
-      return res.data.data;
+      return (res.data as any).data ?? res.data;
     }
   });
 
@@ -187,7 +188,7 @@ export default function PayrollDashboard() {
     enabled: mainView === 'bonuses',
     queryFn: async () => {
       const res = await bonusApi.list({ per_page: 100 });
-      return res.data.data.data;
+      return (res.data as any).data?.data ?? (res.data as any).data ?? res.data;
     }
   });
 
@@ -237,6 +238,18 @@ export default function PayrollDashboard() {
     onError: (err: unknown) => {
       // Never fake an approval/payment locally when the API rejected it.
       showToast(getApiErrorMessage(err, 'Failed to approve payroll run.'), 'error');
+    }
+  });
+
+  const deleteRunMutation = useMutation({
+    mutationFn: (id: number) => payrollApi.deleteRun(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
+      setSelectedRunId(null);
+      showToast('Payroll run deleted successfully.', 'success');
+    },
+    onError: (err: unknown) => {
+      showToast(getApiErrorMessage(err, 'Failed to delete payroll run.'), 'error');
     }
   });
 
@@ -320,6 +333,16 @@ export default function PayrollDashboard() {
     if (!selectedRunId || !selectedRun) return;
     if (await confirm({ message: `Approve payroll run ${selectedRun.run_number}? Payslips will be emailed to employees who've opted in.`, variant: 'info' })) {
       approveRunMutation.mutate(selectedRunId);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedRunId || !selectedRun) return;
+    if (await confirm({
+      message: `Are you sure you want to delete payroll run ${selectedRun.run_number}? This will revert any associated bonuses back to approved status.`,
+      variant: 'danger'
+    })) {
+      deleteRunMutation.mutate(selectedRunId);
     }
   };
 
@@ -521,7 +544,7 @@ export default function PayrollDashboard() {
 
       {/* ── RUNS VIEW ── */}
       {mainView === 'runs' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1.5rem', flex: 1, minHeight: 0 }}>
+        <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-6 flex-1 min-h-0">
 
           {/* Left Side: Runs List */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', overflowY: 'auto' }}>
@@ -682,6 +705,16 @@ export default function PayrollDashboard() {
                   >
                     <FileText size={14} /> Export (PDF)
                   </button>
+                  {canManagePayroll && (
+                    <button
+                      onClick={handleDelete}
+                      disabled={deleteRunMutation.isPending}
+                      className="btn btn-danger btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+                    >
+                      <Trash2 size={14} /> Delete Run
+                    </button>
+                  )}
                 </div>
 
                 {/* Tab Selector */}

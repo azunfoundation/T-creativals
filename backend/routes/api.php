@@ -277,7 +277,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('payroll/runs/{payroll_run}/export', [PayrollRunController::class, 'export'])->name('payroll.runs.export');
         Route::post('payroll/runs/{payroll_run}/approve', [PayrollRunController::class, 'approve'])->name('payroll.runs.approve');
         Route::get('payroll/cost-allocation', [PayrollRunController::class, 'costAllocation'])->name('payroll.cost-allocation');
-        Route::apiResource('payroll/runs', PayrollRunController::class)->parameters(['runs' => 'payroll_run'])->only(['index', 'store', 'show']);
+        Route::apiResource('payroll/runs', PayrollRunController::class)->parameters(['runs' => 'payroll_run'])->only(['index', 'store', 'show', 'destroy']);
 
         // Salary setup — without this, PayrollRunController@store has nothing to compute from.
         Route::get('compensation-types', [EmployeeCompensationController::class, 'types'])->name('compensation-types.index');

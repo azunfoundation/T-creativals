@@ -22,6 +22,7 @@ class Project extends Model
         'invoice_id',
         'manager_id',
         'status',
+        'priority',
         'start_date',
         'end_date',
         'budget_hours',

@@ -221,4 +221,61 @@ class Sprint10PayrollFeaturesTest extends TestCase
                    count($mail->attachments()) === 1;
         });
     }
+
+    public function test_delete_payroll_run_reverts_bonuses(): void
+    {
+        $run = PayrollRun::create([
+            'year' => 2026,
+            'month' => 6,
+            'status' => 'draft',
+            'submitted_by' => $this->founder->id,
+            'currency_id' => $this->inr->id,
+            'total_gross' => 100000,
+            'total_deductions' => 0,
+            'total_net' => 100000,
+        ]);
+
+        $item = PayrollRunItem::create([
+            'payroll_run_id' => $run->id,
+            'user_id' => $this->employee->id,
+            'base_salary' => 100000,
+            'bonus_amount' => 5000,
+            'deductions' => 0,
+            'net_salary' => 105000,
+            'hours_logged' => 160,
+            'expected_hours' => 160,
+            'utilization_rate' => 100,
+            'breakdown' => [],
+        ]);
+
+        $bonus = \App\Models\Bonus::create([
+            'user_id' => $this->employee->id,
+            'payroll_run_id' => $run->id,
+            'approved_by' => $this->founder->id,
+            'amount' => 5000,
+            'currency_id' => $this->inr->id,
+            'type' => 'performance',
+            'effective_date' => '2026-06-15',
+            'status' => 'paid',
+        ]);
+
+        $this->actingAs($this->founder, 'sanctum');
+
+        $response = $this->deleteJson("/api/v1/payroll/runs/{$run->id}");
+        $response->assertStatus(200);
+
+        // Verify payroll run is soft deleted
+        $this->assertSoftDeleted('payroll_runs', ['id' => $run->id]);
+
+        // Verify items are deleted
+        $this->assertDatabaseMissing('payroll_run_items', ['id' => $item->id]);
+
+        // Verify bonus is reverted to approved and payroll_run_id is null
+        $this->assertDatabaseHas('bonuses', [
+            'id' => $bonus->id,
+            'status' => 'approved',
+            'payroll_run_id' => null,
+        ]);
+    }
 }
+

@@ -782,8 +782,8 @@ export default function LeadsPage() {
                     onDrop={() => handleDrop(stage.id)}
                     onDragLeave={() => setDragOverStageId(null)}
                     style={{
-                      width: '272px',
-                      minWidth: '272px',
+                      flex: 1,
+                      minWidth: '260px',
                       background: isOver
                         ? 'var(--surface-hover)'
                         : stage.color
@@ -946,55 +946,6 @@ export default function LeadsPage() {
               <Plus size={14} /> Add New Stage
             </Link>
           </div>
-
-          {/* Insights Sidebar */}
-          <aside style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
-
-            {/* Pipeline Insights */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem' }}>
-              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '0.625rem' }}>
-                <Layers size={15} style={{ color: 'var(--accent)' }} /> Pipeline Insights
-              </h3>
-              <InsightRow icon={Users} iconBg="var(--info-subtle)" iconColor="var(--info)" label="Total Leads" value={String(totalLeads)} />
-              <InsightRow icon={Briefcase} iconBg="var(--accent-subtle)" iconColor="var(--accent)" label="Active Deals" value={String(activeDeals)} />
-              <InsightRow icon={Trophy} iconBg="var(--success-subtle)" iconColor="var(--success)" label="Won This Month" value={formatCurrency(wonThisMonth)} />
-              <InsightRow icon={IndianRupee} iconBg="var(--warning-subtle)" iconColor="var(--warning)" label="Avg. Deal Value" value={formatCurrency(avgDealValue)} />
-              <Link
-                href="/reports"
-                className="btn btn-sm"
-                style={{ width: '100%', justifyContent: 'center', marginTop: '0.75rem', background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid transparent' }}
-              >
-                <BarChart3 size={14} /> View Full Report
-              </Link>
-            </div>
-
-            {/* Quick Actions */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '0.25rem' }}>
-                <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Quick Actions
-              </h3>
-              <QuickAction
-                icon={UserPlus} iconBg="var(--info-subtle)" iconColor="var(--info)"
-                title="Add New Lead" caption="Create a new lead"
-                onClick={() => openCreateModal()}
-              />
-              <QuickAction
-                icon={Upload} iconBg="var(--success-subtle)" iconColor="var(--success)"
-                title="Import Leads" caption="Upload from CSV / Excel"
-                onClick={() => showToast('CSV / Excel import is coming soon.', 'info')}
-              />
-              <QuickAction
-                icon={Tag} iconBg="var(--accent-subtle)" iconColor="var(--accent)"
-                title="Lead Sources" caption="Manage lead sources"
-                href="/settings/crm"
-              />
-              <QuickAction
-                icon={Users} iconBg="var(--warning-subtle)" iconColor="var(--warning)"
-                title="Sales Executives" caption="Manage sales team"
-                href="/users"
-              />
-            </div>
-          </aside>
         </div>
       ) : (
 

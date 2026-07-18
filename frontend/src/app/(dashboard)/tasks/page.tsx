@@ -9,8 +9,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckSquare, Search, Plus, List, LayoutGrid, Calendar, MoreHorizontal,
   Trash2, User, Clock, AlertCircle, PlusCircle, CheckCircle2, RefreshCw, X, FolderOpen,
-  Play, Tag as TagIcon, Eye, Lock, Loader2, UploadCloud, Lightbulb, TrendingUp,
-  AlertTriangle, Sparkles, Filter, PieChart, Activity, Layers, ListChecks
+  Play, Tag as TagIcon, Eye, Lock, Loader2, TrendingUp,
+  AlertTriangle, Filter, ListChecks
 } from 'lucide-react';
 import {
   tasks as tasksApi,
@@ -413,11 +413,6 @@ export default function TasksPage() {
   // Sidebar & Analytics Data
   // ============================================================
 
-  const statusOverviewSegments = STATUS_COLUMNS.map((col) => ({
-    label: col.label,
-    color: col.color,
-    value: taskList.filter((t) => t.status === col.id).length,
-  }));
 
   const priorityDistribution = (Object.keys(PRIORITY_META) as Array<keyof typeof PRIORITY_META>).map((key) => ({
     label: PRIORITY_META[key].label,
@@ -440,45 +435,9 @@ export default function TasksPage() {
   const completionRate = taskList.length > 0 ? (doneTasks.length / taskList.length) * 100 : 0;
   const completionTrend = pctChangeOverWeek(doneTasks.map((t) => t.updated_at));
 
-  const recentActivity = [...taskList]
-    .sort((a, b) => new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime())
-    .slice(0, 5)
-    .map((t) => {
-      const createdTime = t.created_at ? new Date(t.created_at).getTime() : NaN;
-      const updatedTime = t.updated_at ? new Date(t.updated_at).getTime() : NaN;
-      const isNew = !isNaN(createdTime) && !isNaN(updatedTime) && Math.abs(updatedTime - createdTime) < 60_000;
-
-      let icon = Plus, color = 'var(--info)', bg = 'var(--info-subtle)', text = `New task "${t.title}" created`;
-      if (!isNew) {
-        if (t.status === 'done') {
-          icon = CheckCircle2; color = 'var(--success)'; bg = 'var(--success-subtle)';
-          text = `Task "${t.title}" marked as Done`;
-        } else if (t.priority === 'urgent') {
-          icon = AlertCircle; color = 'var(--danger)'; bg = 'var(--danger-subtle)';
-          text = `Task "${t.title}" marked as Urgent`;
-        } else {
-          icon = RefreshCw; color = 'var(--warning)'; bg = 'var(--warning-subtle)';
-          text = `Task "${t.title}" updated`;
-        }
-      }
-
-      return {
-        id: t.id,
-        icon,
-        color,
-        bg,
-        text,
-        who: t.assignee?.name || t.assignee_name || 'Someone',
-        time: formatRelativeTime(t.updated_at ?? t.created_at ?? new Date().toISOString()),
-      };
-    });
-
-  const productivityTip = overdueTasks.length > 0
-    ? `You have ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'} — tackle those first to keep projects on track.`
-    : 'Break large tasks into smaller subtasks to track progress more effectively.';
 
   return (
-    <div style={{ maxWidth: '1600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ maxWidth: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -538,11 +497,8 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Main 2-Column Grid Layout matching the mockup */}
-      <div className="board-layout" style={{ gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: '1.5rem', display: 'grid', alignItems: 'start' }}>
-        
-        {/* Left Column (Content area) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
+      {/* Main Content Area */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
           
           {/* Status Metrics Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.875rem' }}>
@@ -712,8 +668,8 @@ export default function TasksPage() {
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, col.id as Task['status'])}
                     style={{
-                      width: '260px',
-                      minWidth: '260px',
+                      flex: 1,
+                      minWidth: '240px',
                       background: 'var(--surface)',
                       border: '1px solid var(--border)',
                       borderRadius: 'var(--radius-lg)',
@@ -996,143 +952,6 @@ export default function TasksPage() {
               </AnalyticsCard>
             </div>
           )}
-
-        </div>
-
-        {/* Right Column (Sidebar area) */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
-
-          {/* Task Overview */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem' }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '1rem' }}>
-              <PieChart size={15} style={{ color: 'var(--accent)' }} /> Task Overview
-            </h3>
-            {taskList.length === 0 ? (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>No tasks yet — create one to see the breakdown.</p>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <DonutChart segments={statusOverviewSegments.filter((s) => s.value > 0)} size={110} thickness={20} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, minWidth: '130px' }}>
-                  {statusOverviewSegments.map((seg) => (
-                    <div key={seg.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '0.75rem' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', minWidth: 0 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
-                        {seg.label}
-                      </span>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: 600, flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: '0.7rem' }}>
-                        {seg.value} ({taskList.length > 0 ? Math.round((seg.value / taskList.length) * 1000) / 10 : 0}%)
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Recent Activity */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-                <Activity size={15} style={{ color: 'var(--accent)' }} /> Recent Activity
-              </h3>
-              <button
-                onClick={() => setViewMode('list')}
-                style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                View all
-              </button>
-            </div>
-            {recentActivity.length === 0 ? (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>No activity yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                {recentActivity.map((a) => {
-                  const ActIcon = a.icon;
-                  return (
-                    <div key={a.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                      <span style={{ width: 30, height: 30, borderRadius: '50%', background: a.bg, color: a.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <ActIcon size={14} />
-                      </span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                          {a.text}
-                        </span>
-                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                          {a.who} · {a.time}
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Quick Actions */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.125rem' }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0, marginBottom: '0.875rem' }}>
-              <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Quick Actions
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              <QuickAction
-                icon={Plus} iconBg="rgba(124, 58, 237, 0.08)" iconColor="var(--accent)"
-                title="Add New Task" caption="Create a new task"
-                onClick={() => setShowCreateModal(true)}
-              />
-              <QuickAction
-                icon={UploadCloud} iconBg="rgba(16, 185, 129, 0.08)" iconColor="#10b981"
-                title="Import Tasks" caption="From CSV / Excel"
-                onClick={() => showToast('CSV / Excel import is coming soon.', 'info')}
-              />
-              <QuickAction
-                icon={TagIcon} iconBg="rgba(59, 130, 246, 0.08)" iconColor="#3b82f6"
-                title="Manage Categories" caption="Create & edit categories"
-                onClick={() => setShowCategoriesModal(true)}
-              />
-              <QuickAction
-                icon={Layers} iconBg="rgba(245, 158, 11, 0.08)" iconColor="#f59e0b"
-                title="Task Templates" caption="Use pre-built templates"
-                onClick={() => showToast('Apply a task template from inside a project via "Apply Template".', 'info')}
-              />
-            </div>
-          </div>
-
-          {/* Productivity Tip */}
-          <div style={{
-            background: 'linear-gradient(135deg, #e0e7ff 0%, #fae8ff 100%)',
-            border: '1px solid #ddd6fe',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.125rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
-              <h4 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Lightbulb size={15} style={{ color: '#f59e0b' }} /> Productivity Tip
-              </h4>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.6 }}>{productivityTip}</p>
-            </div>
-            
-            {/* Embedded illustration decoration */}
-            <div style={{ flexShrink: 0, opacity: 0.85, zIndex: 1 }}>
-              <svg width="56" height="56" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="44" cy="40" r="16" fill="#e0e7ff" stroke="#4f46e5" strokeWidth="2"/>
-                <circle cx="44" cy="40" r="10" fill="#ffedd5" stroke="#f59e0b" strokeWidth="1.5"/>
-                <circle cx="44" cy="40" r="4" fill="#ef4444"/>
-                <path d="M24 20 L38 34" stroke="#1f2937" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M38 34 L36 30 M38 34 L34 32" stroke="#1f2937" strokeWidth="2"/>
-                <rect x="8" y="14" width="22" height="30" rx="3" fill="white" stroke="#374151" strokeWidth="2"/>
-                <rect x="13" y="10" width="12" height="6" rx="1" fill="#e2e8f0" stroke="#374151" strokeWidth="2"/>
-                <line x1="12" y1="22" x2="22" y2="22" stroke="#94a3b8" strokeWidth="2" />
-                <line x1="12" y1="28" x2="18" y2="28" stroke="#94a3b8" strokeWidth="2" />
-              </svg>
-            </div>
-          </div>
-        </aside>
-
       </div>
 
       {/* Create Task Modal */}
@@ -1584,35 +1403,6 @@ function AnalyticsCard({ title, children }: { title: React.ReactNode; children: 
   );
 }
 
-function QuickAction({ icon: Icon, iconBg, iconColor, title, caption, onClick }: {
-  icon: React.ComponentType<any>;
-  iconBg: string;
-  iconColor: string;
-  title: string;
-  caption: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="crm-quick-action"
-      style={{
-        display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start',
-        padding: '0.75rem', borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--border-subtle)', background: 'transparent',
-        width: '100%', cursor: 'pointer', textAlign: 'left',
-      }}
-    >
-      <span style={{ width: 32, height: 32, borderRadius: '8px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={15} />
-      </span>
-      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
-        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{caption}</span>
-      </span>
-    </button>
-  );
-}
 
 function DonutChart({ segments, size = 148, thickness = 26 }: {
   segments: { label: string; value: number; color: string }[];

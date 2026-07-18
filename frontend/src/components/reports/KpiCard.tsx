@@ -75,7 +75,7 @@ export default function KpiCard({ title, value, subtext, icon, accent = 'accent'
       </div>
 
       {/* Value */}
-      <span className="kpi-value" style={{ fontSize: '1.65rem', letterSpacing: '-0.02em' }}>{value}</span>
+      <span className="kpi-value" style={{ letterSpacing: '-0.02em' }}>{value}</span>
 
       {/* Subtext / Trend */}
       {(trend || subtext) && (

@@ -563,7 +563,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
 }
 
 .data-table {
@@ -716,6 +718,10 @@
   flex-direction: column;
   gap: 0.5rem;
   transition: border-color var(--transition-base), transform var(--transition-base);
+  min-width: 0;
+  overflow: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .kpi-card:hover {
@@ -733,11 +739,15 @@
 }
 
 .kpi-value {
-  font-size: 1.75rem;
+  font-size: clamp(1.35rem, 2.2vw, 1.75rem);
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: block;
 }
 
 .kpi-trend {
@@ -1074,7 +1084,7 @@
 /* CRM pipeline page: board + insights sidebar */
 .crm-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -2041,10 +2051,14 @@
 }
 
 .dash-kpi-value {
-  font-size: 1.5rem;
+  font-size: clamp(1.2rem, 1.8vw, 1.5rem);
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: block;
 }
 
 .dash-kpi-footer {
@@ -2474,6 +2488,34 @@
   display: none !important;
 }
 
+/* Collapse topbar details on smaller laptop viewports to prevent overflow */
+@media (max-width: 1279px) {
+  .topbar-user-btn .topbar-user-name,
+  .topbar-user-btn svg {
+    display: none !important;
+  }
+  .topbar-user-btn {
+    padding: 0 !important;
+    background: none !important;
+    border: none !important;
+  }
+  .topbar-search-label,
+  .topbar-search .topbar-kbd {
+    display: none !important;
+  }
+  .topbar-search {
+    min-width: 0 !important;
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+  .topbar-ai-btn span,
+  .quick-create-btn span {
+    display: none !important;
+  }
+}
+
 @media (max-width: 1023px) {
   .desktop-only {
     display: none !important;
@@ -2570,16 +2612,6 @@
     color: var(--text-primary);
   }
 
-  /* Hide details from user button to fit screens */
-  .topbar-user-btn .topbar-user-name,
-  .topbar-user-btn svg {
-    display: none !important;
-  }
-  .topbar-user-btn {
-    padding: 0 !important;
-    background: none !important;
-    border: none !important;
-  }
 
   /* Breadcrumbs: show only current page title as mobile header title */
   .topbar-breadcrumb {

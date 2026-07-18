@@ -70,6 +70,7 @@ class UserController extends Controller
             'manager_ids'            => ['nullable', 'array'],
             'manager_ids.*'          => ['exists:users,id'],
             'is_client_portal_user'  => ['nullable', 'boolean'],
+            'hourly_rate'            => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $existing = User::withTrashed()->where('email', $validated['email'])->first();
@@ -142,6 +143,26 @@ class UserController extends Controller
                 $id => ['relationship_type' => 'direct', 'is_primary' => $index === 0],
             ])->toArray();
         $user->managers()->sync($managerSync);
+
+        if ($request->filled('hourly_rate') && $request->user()->hasRole('founder')) {
+            $hourlyRate = (float) $validated['hourly_rate'];
+            $hourlyCompType = \App\Models\CompensationType::where('type', 'hourly')->first()
+                ?? \App\Models\CompensationType::first();
+            $currency = \App\Models\Currency::where('is_default', true)->first()
+                ?? \App\Models\Currency::first();
+
+            \App\Models\EmployeeCompensation::updateOrCreate(
+                ['user_id' => $user->id, 'is_current' => true],
+                [
+                    'compensation_type_id' => $hourlyCompType->id,
+                    'base_amount' => 0.00,
+                    'currency_id' => $currency->id,
+                    'expected_monthly_hours' => 200.00,
+                    'hourly_rate' => $hourlyRate,
+                    'effective_from' => now()->toDateString(),
+                ]
+            );
+        }
 
         $emailSent = $this->queueWelcomeEmail($user, $validated['password']);
 
@@ -225,9 +246,48 @@ class UserController extends Controller
             'status'                => ['nullable', Rule::in(['active', 'inactive', 'suspended'])],
             'avatar_url'            => ['nullable', 'string', 'max:2048'],
             'is_client_portal_user' => ['nullable', 'boolean'],
+            'hourly_rate'            => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $user->update($validated);
+
+        if ($request->has('hourly_rate') && $request->user()->hasRole('founder')) {
+            $hourlyRate = $request->hourly_rate === null ? null : (float) $request->hourly_rate;
+            
+            $comp = \App\Models\EmployeeCompensation::where('user_id', $user->id)
+                ->where('is_current', true)
+                ->first();
+
+            if ($comp) {
+                if ($hourlyRate > 0) {
+                    $hourlyCompType = \App\Models\CompensationType::where('type', 'hourly')->first()
+                        ?? \App\Models\CompensationType::first();
+                    $comp->update([
+                        'hourly_rate' => $hourlyRate,
+                        'compensation_type_id' => $hourlyCompType->id,
+                        'base_amount' => 0.00,
+                    ]);
+                } else {
+                    $comp->update(['hourly_rate' => $hourlyRate]);
+                }
+            } else if ($hourlyRate !== null) {
+                $hourlyCompType = \App\Models\CompensationType::where('type', 'hourly')->first()
+                    ?? \App\Models\CompensationType::first();
+                $currency = \App\Models\Currency::where('is_default', true)->first()
+                    ?? \App\Models\Currency::first();
+
+                \App\Models\EmployeeCompensation::create([
+                    'user_id' => $user->id,
+                    'compensation_type_id' => $hourlyCompType->id,
+                    'base_amount' => 0.00,
+                    'currency_id' => $currency->id,
+                    'expected_monthly_hours' => 200.00,
+                    'hourly_rate' => $hourlyRate,
+                    'effective_from' => now()->toDateString(),
+                    'is_current' => true,
+                ]);
+            }
+        }
 
         if ($request->has('role_ids')) {
             $this->authorizeRoleAssignment($request);

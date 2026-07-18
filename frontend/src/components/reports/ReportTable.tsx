@@ -33,7 +33,7 @@ export default function ReportTable({ columns, data = [], pageSize = 10 }: Repor
   };
 
   // 1. Sort data
-  const sortedData = [...data];
+  const sortedData = Array.isArray(data) ? [...data] : [];
   if (sortKey) {
     sortedData.sort((a, b) => {
       const valA = a[sortKey];
