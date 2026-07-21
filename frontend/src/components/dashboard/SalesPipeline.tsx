@@ -7,9 +7,10 @@ import { ArrowRight, Flame } from 'lucide-react';
 interface SalesPipelineProps {
   salesPipeline: any;
   canViewSales: boolean;
+  isProjectScoped?: boolean;
 }
 
-export default function SalesPipeline({ salesPipeline, canViewSales }: SalesPipelineProps) {
+export default function SalesPipeline({ salesPipeline, canViewSales, isProjectScoped = false }: SalesPipelineProps) {
   const router = useRouter();
 
   if (!canViewSales || !salesPipeline) {
@@ -33,7 +34,7 @@ export default function SalesPipeline({ salesPipeline, canViewSales }: SalesPipe
       <div className="dash-card-header">
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h3 className="dash-card-title" style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Sales Pipeline
+            Sales Pipeline {isProjectScoped && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Org-wide)</span>}
             <HelpIcon title="Sales Pipeline" content={{
               what: 'A visual funnel depicting the current status and conversion of leads in your sales pipeline.',
               why: 'Allows sales managers to monitor conversion bottlenecks between stages.',

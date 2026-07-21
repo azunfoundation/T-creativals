@@ -47,7 +47,9 @@ class FinancialReportService
             ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
 
         if ($projectId) {
-            $invoiceStatsQuery->where('project_id', $projectId);
+            $invoiceStatsQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+            });
         }
 
         $invoiceStats = $invoiceStatsQuery->first();
@@ -73,7 +75,9 @@ class FinancialReportService
             ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
 
         if ($projectId) {
-            $trendQuery->where('project_id', $projectId);
+            $trendQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+            });
         }
 
         $trendResults = $trendQuery
@@ -95,7 +99,9 @@ class FinancialReportService
             ->whereBetween('invoices.issue_date', [$from->toDateString(), $to->toDateString()]);
 
         if ($projectId) {
-            $topClientsQuery->where('invoices.project_id', $projectId);
+            $topClientsQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+            });
         }
 
         $topClients = $topClientsQuery

@@ -10,6 +10,7 @@ interface WhosInTodayProps {
   isError: boolean;
   onRetry: () => void;
   canViewTeamAttendance: boolean;
+  isProjectScoped?: boolean;
 }
 
 export default function WhosInToday({
@@ -17,7 +18,8 @@ export default function WhosInToday({
   isLoading,
   isError,
   onRetry,
-  canViewTeamAttendance
+  canViewTeamAttendance,
+  isProjectScoped = false
 }: WhosInTodayProps) {
   const router = useRouter();
 
@@ -114,7 +116,7 @@ export default function WhosInToday({
       <div className="dash-card-header">
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h3 className="dash-card-title" style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Who's In Today
+            Who's In Today {isProjectScoped && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Org-wide)</span>}
             <HelpIcon title="Who's In Today" content={{
               what: 'Visual indicator of team attendance check-in status for today.',
               why: 'Allows management to see which staff members are currently clocked in.',

@@ -16,6 +16,7 @@ interface AICommandCenterProps {
   onRetry: () => void;
   dashboardData: any;
   canViewFinancial: boolean;
+  isProjectScoped?: boolean;
 }
 
 export default function AICommandCenter({
@@ -24,7 +25,8 @@ export default function AICommandCenter({
   isError,
   onRetry,
   dashboardData,
-  canViewFinancial
+  canViewFinancial,
+  isProjectScoped = false
 }: AICommandCenterProps) {
   const router = useRouter();
 
@@ -90,7 +92,7 @@ export default function AICommandCenter({
           </div>
           <div>
             <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              AI Command Center
+              AI Command Center {isProjectScoped && <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: 'var(--text-muted)' }}>(Project Workspace)</span>}
               <HelpIcon title="AI Command Center" content={{
                 what: 'An executive view summarizing business health, revenue trends, collections, operational risks, and approvals.',
                 why: 'Provides the agency director a quick health check of the business along with recommendations.',
@@ -124,7 +126,7 @@ export default function AICommandCenter({
             <span className="dash-ai-metric-value" style={{ fontSize: '0.875rem', padding: '0.125rem 0' }}>
               {formatCurrency(collectionsVal)}
             </span>
-            <span style={{ fontSize: '0.625rem', color: 'var(--text-secondary)' }}>vs last month</span>
+            <span style={{ fontSize: '0.625rem', color: 'var(--text-secondary)' }}>{isProjectScoped ? 'collections (Org-wide)' : 'vs last month'}</span>
           </div>
 
           <div className="dash-ai-metric-box">
@@ -140,7 +142,7 @@ export default function AICommandCenter({
             <span className="dash-ai-metric-value" style={{ color: approvalsCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
               {approvalsCount}
             </span>
-            <span style={{ fontSize: '0.625rem', color: 'var(--text-secondary)' }}>pending action</span>
+            <span style={{ fontSize: '0.625rem', color: 'var(--text-secondary)' }}>{isProjectScoped ? 'pending (Org-wide)' : 'pending action'}</span>
           </div>
         </div>
       </div>

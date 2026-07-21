@@ -146,7 +146,7 @@ export default function DashboardPage() {
   if (dashboardData.active_clients_count !== undefined) {
     kpis.push({
       label: 'Active Clients', value: dashboardData.active_clients_count,
-      trend: 'flat', badge: 'contracts live', sub: 'in engagement',
+      trend: 'flat', badge: activeProjectId ? 'contracts live (Org-wide)' : 'contracts live', sub: 'in engagement',
       icon: Users, color: '#3b82f6',
       help: 'Total number of clients with active contracts/workorders in the agency.',
     });
@@ -154,7 +154,7 @@ export default function DashboardPage() {
   if (pipelineSummary) {
     kpis.push({
       label: 'Pipeline Value', value: formatCurrency(pipelineSummary.pipeline_value || 0),
-      trend: 'flat', badge: `${pipelineSummary.pending_leads || 0} open leads`, sub: 'sales opportunities',
+      trend: 'flat', badge: activeProjectId ? `${pipelineSummary.pending_leads || 0} open leads (Org-wide)` : `${pipelineSummary.pending_leads || 0} open leads`, sub: 'sales opportunities',
       icon: TrendingUp, color: '#3b82f6',
       help: 'The estimated financial value of all open deals/opportunities in the CRM pipeline.',
     });
@@ -163,7 +163,7 @@ export default function DashboardPage() {
     kpis.push({
       label: 'Active Projects', value: projectsSummary.active_count || 0,
       trend: (projectsSummary.overdue_count || 0) > 0 ? 'down' : 'up',
-      badge: `${projectsSummary.overdue_count || 0} overdue`, sub: 'in progress',
+      badge: `${projectsSummary.overdue_count || 0} overdue`, sub: activeProjectId ? 'project scope' : 'in progress',
       icon: Briefcase, color: '#7c3aed',
       help: 'Projects currently in progress. The badge shows how many have passed their end date.',
     });
@@ -243,6 +243,7 @@ export default function DashboardPage() {
         onRetry={() => briefingQuery.refetch()}
         dashboardData={dashboardData}
         canViewFinancial={canViewFinancial}
+        isProjectScoped={!!activeProjectId}
       />
 
       {/* 3. KPI Cards */}
@@ -273,6 +274,7 @@ export default function DashboardPage() {
         <SalesPipeline
           salesPipeline={salesPipeline}
           canViewSales={perms.includes('reports.view_sales')}
+          isProjectScoped={!!activeProjectId}
         />
         
         <TeamPerformance teamPerformance={dashboardData.team_performance || []} canViewFinancial={canViewFinancial} />
@@ -292,6 +294,7 @@ export default function DashboardPage() {
           isError={presenceQuery.isError}
           onRetry={() => presenceQuery.refetch()}
           canViewTeamAttendance={canViewTeamAttendance}
+          isProjectScoped={!!activeProjectId}
         />
 
         <ActivityFeed alertsList={dashboardData.alerts_list || []} />

@@ -368,4 +368,78 @@ class Sprint13DashboardTest extends TestCase
         $this->assertSame([], $clientDetails['invoices']['items'], 'Client details invoices should be empty for employee');
         $this->assertSame(0, $clientDetails['invoices']['total_count'], 'Client details invoices count should be zero');
     }
+
+    /**
+     * Test project workspace filtering flow for dashboard Overview and Briefing endpoints.
+     */
+    public function test_dashboard_project_workspace_filtering_scenarios(): void
+    {
+        $clientUser = User::factory()->create(['status' => 'active']);
+        $clientUser->assignRole('client');
+
+        $project = Project::create([
+            'project_number' => 'PRJ-TEST-WS-1',
+            'name' => 'Workspace Filter Test Project',
+            'client_id' => $clientUser->id,
+            'manager_id' => $this->founder->id,
+            'status' => 'in_progress',
+            'start_date' => now()->startOfMonth()->toDateString(),
+            'end_date' => now()->endOfMonth()->toDateString(),
+            'budget_amount' => 100000,
+        ]);
+
+        $emptyProject = Project::create([
+            'project_number' => 'PRJ-TEST-WS-2',
+            'name' => 'Empty Workspace Test Project',
+            'client_id' => $clientUser->id,
+            'manager_id' => $this->founder->id,
+            'status' => 'in_progress',
+            'start_date' => now()->startOfMonth()->toDateString(),
+            'end_date' => now()->endOfMonth()->toDateString(),
+            'budget_amount' => 0,
+        ]);
+
+        // 1. All Projects (no project_id filter)
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson('/api/v1/reports/dashboard')
+            ->assertStatus(200)
+            ->assertJsonStructure(['this_month_revenue', 'my_summary']);
+
+        // 2. Valid Project
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson("/api/v1/reports/dashboard?project_id={$project->id}")
+            ->assertStatus(200)
+            ->assertJsonStructure(['this_month_revenue', 'my_summary']);
+
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson("/api/v1/reports/dashboard/briefing?project_id={$project->id}")
+            ->assertStatus(200);
+
+        // 3. Project with no financial data / no team members
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson("/api/v1/reports/dashboard?project_id={$emptyProject->id}")
+            ->assertStatus(200)
+            ->assertJsonStructure(['this_month_revenue', 'my_summary']);
+
+        // 4. Unauthorized Project (employee has no permission or assignment)
+        $unauthorizedEmployee = User::factory()->create(['status' => 'active']);
+        $unauthorizedEmployee->assignRole('employee');
+
+        $this->actingAs($unauthorizedEmployee, 'sanctum')
+            ->getJson("/api/v1/reports/dashboard?project_id={$project->id}")
+            ->assertStatus(403);
+
+        $this->actingAs($unauthorizedEmployee, 'sanctum')
+            ->getJson("/api/v1/reports/dashboard/briefing?project_id={$project->id}")
+            ->assertStatus(403);
+
+        // 5. Invalid / Non-existent Project ID
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson('/api/v1/reports/dashboard?project_id=999999')
+            ->assertStatus(404);
+
+        $this->actingAs($this->founder, 'sanctum')
+            ->getJson('/api/v1/reports/dashboard/briefing?project_id=999999')
+            ->assertStatus(404);
+    }
 }

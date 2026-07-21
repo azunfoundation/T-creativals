@@ -630,15 +630,21 @@ class ReportController extends Controller
         $user = $request->user();
         $projectId = $request->filled('project_id') ? (int) $request->input('project_id') : null;
 
-        // Authorization check if project_id is provided
+        // Authorization check & project existence check if project_id is provided
         if ($projectId) {
+            $projectExists = DB::table('projects')->where('id', $projectId)->whereNull('deleted_at')->exists();
+            if (!$projectExists) {
+                return response()->json(['message' => 'Project not found.'], 404);
+            }
+
             $canSeeAllProjects = $user->hasPermissionTo('projects.view_all') || $user->hasPermissionTo('reports.view_financial');
             if (!$canSeeAllProjects) {
                 if ($user->hasRole('client')) {
-                    $hasAccess = DB::table('projects')->where('id', $projectId)->where('client_id', $user->id)->exists();
+                    $hasAccess = DB::table('projects')->where('id', $projectId)->where('client_id', $user->id)->whereNull('deleted_at')->exists();
                 } else {
                     $hasAccess = DB::table('projects')
                         ->where('id', $projectId)
+                        ->whereNull('deleted_at')
                         ->where(function ($q) use ($user) {
                             $q->where('manager_id', $user->id)
                                ->orWhereExists(function ($mq) use ($user) {
@@ -803,7 +809,9 @@ class ReportController extends Controller
                         ->whereIn('status', array_merge(self::RECEIVABLE_INVOICE_STATUSES, ['paid']))
                         ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
                     if ($projectId) {
-                        $invQuery->where('project_id', $projectId);
+                        $invQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                            $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+                        });
                     }
                     $invoicedSum = (float) $invQuery->sum(DB::raw('total_amount * exchange_rate'));
 
@@ -813,7 +821,9 @@ class ReportController extends Controller
                         ->whereNull('invoices.deleted_at')
                         ->whereBetween('payments.payment_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
                     if ($projectId) {
-                        $collQuery->where('invoices.project_id', $projectId);
+                        $collQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                            $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+                        });
                     }
                     $collectedSum = (float) $collQuery->sum(DB::raw('payments.amount * invoices.exchange_rate'));
 
@@ -1227,7 +1237,9 @@ class ReportController extends Controller
                     ->whereIn('invoices.status', self::RECEIVABLE_INVOICE_STATUSES)
                     ->where('invoices.due_date', '<', $today);
                 if ($projectId) {
-                    $overdueInvoicesQuery->where('invoices.project_id', $projectId);
+                    $overdueInvoicesQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                        $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+                    });
                 }
                 $attention['counts']['invoices'] = (clone $overdueInvoicesQuery)->count();
                 $attention['counts']['invoices_amount'] = (float) (clone $overdueInvoicesQuery)->sum(DB::raw('invoices.due_amount * invoices.exchange_rate'));
@@ -1338,9 +1350,24 @@ class ReportController extends Controller
         }
 
         if ($projectId) {
+            $projectExists = DB::table('projects')->where('id', $projectId)->whereNull('deleted_at')->exists();
+            if (!$projectExists) {
+                return response()->json(['message' => 'Project not found.'], 404);
+            }
             $canSeeAllProjects = $user->hasPermissionTo('projects.view_all') || $user->hasPermissionTo('reports.view_financial');
             if (!$canSeeAllProjects) {
-                $hasAccess = DB::table('projects')->where('id', $projectId)->where('manager_id', $user->id)->exists();
+                $hasAccess = DB::table('projects')
+                    ->where('id', $projectId)
+                    ->whereNull('deleted_at')
+                    ->where(function ($q) use ($user) {
+                        $q->where('manager_id', $user->id)
+                           ->orWhereExists(function ($mq) use ($user) {
+                               $mq->select(DB::raw(1))
+                                  ->from('project_members')
+                                  ->whereColumn('project_members.project_id', 'projects.id')
+                                  ->where('project_members.user_id', $user->id);
+                           });
+                    })->exists();
                 if (!$hasAccess) {
                     return response()->json(['message' => 'This action is unauthorized.'], 403);
                 }
@@ -1366,20 +1393,31 @@ class ReportController extends Controller
                 ->whereNull('deleted_at')
                 ->whereIn('status', self::RECEIVABLE_INVOICE_STATUSES)
                 ->where('due_date', '<', $today);
+            if ($projectId) {
+                $overdueInvoicesQuery->whereIn('invoices.id', function ($q) use ($projectId) {
+                    $q->select('invoice_id')->from('projects')->where('id', $projectId)->whereNotNull('invoice_id');
+                });
+            }
             $overdueInvoicesCount = (clone $overdueInvoicesQuery)->count();
             $overdueInvoicesAmount = (float) (clone $overdueInvoicesQuery)->sum(DB::raw('due_amount * exchange_rate'));
 
-            $overdueTasksCount = DB::table('tasks')
+            $overdueTasksQuery = DB::table('tasks')
                 ->whereNull('deleted_at')
                 ->whereNotIn('status', ['done', 'cancelled'])
-                ->where('due_date', '<', $today)
-                ->count();
+                ->where('due_date', '<', $today);
+            if ($projectId) {
+                $overdueTasksQuery->where('project_id', $projectId);
+            }
+            $overdueTasksCount = $overdueTasksQuery->count();
 
-            $delayedProjectsCount = DB::table('projects')
+            $delayedProjectsQuery = DB::table('projects')
                 ->whereNull('deleted_at')
                 ->whereIn('status', self::RUNNING_PROJECT_STATUSES)
-                ->where('end_date', '<', $today)
-                ->count();
+                ->where('end_date', '<', $today);
+            if ($projectId) {
+                $delayedProjectsQuery->where('id', $projectId);
+            }
+            $delayedProjectsCount = $delayedProjectsQuery->count();
 
             $openLeadsCount = DB::table('leads')->whereNull('deleted_at')->where('is_converted', false)->count();
             $pendingFollowupsCount = DB::table('lead_followups')
@@ -1425,7 +1463,11 @@ class ReportController extends Controller
             $mostProfitableProjectName = 'None';
             $mostProfitableProjectMargin = 0.0;
             $mostProfitableProjectProfit = 0.0;
-            $runningProjects = Project::whereIn('status', self::RUNNING_PROJECT_STATUSES)->with('invoice')->get();
+            $runningProjectsQuery = Project::whereIn('status', self::RUNNING_PROJECT_STATUSES);
+            if ($projectId) {
+                $runningProjectsQuery->where('id', $projectId);
+            }
+            $runningProjects = $runningProjectsQuery->with('invoice')->get();
             if ($runningProjects->count() > 0) {
                 $pIds = $runningProjects->pluck('id')->toArray();
                 $profitTimesheets = DB::table('timesheets')
