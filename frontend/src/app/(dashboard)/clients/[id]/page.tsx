@@ -95,6 +95,9 @@ export default function ClientDetailPage() {
   const perms = user?.permissions || [];
   const canEdit = perms.includes('clients.edit');
   const canDelete = perms.includes('clients.delete');
+  const canViewFinancials = perms.includes('reports.view_financial');
+  const canViewInvoices = perms.includes('invoices.view') || perms.includes('invoices.view_all');
+  const canViewQuotes = perms.includes('quotes.view') || perms.includes('quotes.view_all');
 
   const [tab, setTab] = useState<TabKey>('overview');
   const [showEditModal, setShowEditModal] = useState(false);
@@ -274,8 +277,8 @@ export default function ClientDetailPage() {
     { key: 'overview', label: 'Overview', icon: Landmark },
     { key: 'contacts', label: 'Contacts', icon: Users, count: contacts.length },
     { key: 'projects', label: 'Projects', icon: FolderKanban, count: projects.total_count },
-    { key: 'invoices', label: 'Invoices', icon: FileText, count: invoices.total_count },
-    { key: 'quotes', label: 'Quotes', icon: FileCheck, count: quotes.total_count },
+    ...(canViewInvoices ? [{ key: 'invoices' as const, label: 'Invoices', icon: FileText, count: invoices.total_count }] : []),
+    ...(canViewQuotes ? [{ key: 'quotes' as const, label: 'Quotes', icon: FileCheck, count: quotes.total_count }] : []),
     { key: 'comms', label: 'Communications', icon: MessageSquare },
   ];
 
@@ -333,22 +336,24 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Money summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="kpi-card">
-          <span className="kpi-label">Lifetime Billed <HelpIcon text="Total of every invoice ever issued to this client (approved, sent, paid, partially paid, or overdue), converted to INR." size={11} /></span>
-          <span className="kpi-value">{formatCurrency(totals.total_billed)}</span>
+      {canViewFinancials && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="kpi-card">
+            <span className="kpi-label">Lifetime Billed <HelpIcon text="Total of every invoice ever issued to this client (approved, sent, paid, partially paid, or overdue), converted to INR." size={11} /></span>
+            <span className="kpi-value">{formatCurrency(totals.total_billed)}</span>
+          </div>
+          <div className="kpi-card">
+            <span className="kpi-label">Collected</span>
+            <span className="kpi-value text-success">{formatCurrency(totals.total_paid)}</span>
+          </div>
+          <div className="kpi-card">
+            <span className="kpi-label">Outstanding <HelpIcon text="Billed money this client hasn't paid yet, across all their invoices." size={11} /></span>
+            <span className="kpi-value" style={{ color: totals.total_outstanding > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
+              {formatCurrency(totals.total_outstanding)}
+            </span>
+          </div>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Collected</span>
-          <span className="kpi-value text-success">{formatCurrency(totals.total_paid)}</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Outstanding <HelpIcon text="Billed money this client hasn't paid yet, across all their invoices." size={11} /></span>
-          <span className="kpi-value" style={{ color: totals.total_outstanding > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
-            {formatCurrency(totals.total_outstanding)}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
@@ -404,80 +409,84 @@ export default function ClientDetailPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             {/* Health */}
-            <div className="card" style={{ padding: '1.25rem' }}>
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
-                  background: health.score >= 80 ? 'var(--success-subtle)' : health.score >= 50 ? 'var(--warning-subtle)' : 'var(--danger-subtle)',
-                  border: `2px solid ${healthColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <span style={{ fontSize: '1.125rem', fontWeight: 800, color: healthColor }}>{health.score}</span>
+            {canViewFinancials && (
+              <div className="card" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{
+                    width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
+                    background: health.score >= 80 ? 'var(--success-subtle)' : health.score >= 50 ? 'var(--warning-subtle)' : 'var(--danger-subtle)',
+                    border: `2px solid ${healthColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ fontSize: '1.125rem', fontWeight: 800, color: healthColor }}>{health.score}</span>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      Health Score
+                      <HelpIcon text="Starts at 100 and loses 10 points per overdue invoice, 15 per on-hold project, 30 per cancelled project, and up to 20 for the share of billing still unpaid. The rows below show this client's actual deductions." size={12} />
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Relationship risk at a glance</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Health Score
-                    <HelpIcon text="Starts at 100 and loses 10 points per overdue invoice, 15 per on-hold project, 30 per cancelled project, and up to 20 for the share of billing still unpaid. The rows below show this client's actual deductions." size={12} />
-                  </h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Relationship risk at a glance</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
+                    <span>Base score</span><span style={{ fontWeight: 600, color: 'var(--success)' }}>100</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
+                    <span>Overdue invoices ({health.components.overdue_invoices})</span>
+                    <span style={{ fontWeight: 600, color: health.components.overdue_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.overdue_penalty}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
+                    <span>On-hold projects ({health.components.on_hold_projects})</span>
+                    <span style={{ fontWeight: 600, color: health.components.on_hold_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.on_hold_penalty}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
+                    <span>Cancelled projects ({health.components.cancelled_projects})</span>
+                    <span style={{ fontWeight: 600, color: health.components.cancelled_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.cancelled_penalty}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
+                    <span>Unpaid share of billing</span>
+                    <span style={{ fontWeight: 600, color: health.components.outstanding_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.outstanding_penalty}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.25rem' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Final score</span>
+                    <span style={{ fontWeight: 700, color: healthColor }}>{health.score} / 100</span>
+                  </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
-                  <span>Base score</span><span style={{ fontWeight: 600, color: 'var(--success)' }}>100</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
-                  <span>Overdue invoices ({health.components.overdue_invoices})</span>
-                  <span style={{ fontWeight: 600, color: health.components.overdue_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.overdue_penalty}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
-                  <span>On-hold projects ({health.components.on_hold_projects})</span>
-                  <span style={{ fontWeight: 600, color: health.components.on_hold_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.on_hold_penalty}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
-                  <span>Cancelled projects ({health.components.cancelled_projects})</span>
-                  <span style={{ fontWeight: 600, color: health.components.cancelled_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.cancelled_penalty}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', paddingBottom: '0.25rem' }}>
-                  <span>Unpaid share of billing</span>
-                  <span style={{ fontWeight: 600, color: health.components.outstanding_penalty > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>−{health.components.outstanding_penalty}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.25rem' }}>
-                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Final score</span>
-                  <span style={{ fontWeight: 700, color: healthColor }}>{health.score} / 100</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Revenue history */}
-            <div className="card" style={{ padding: '1.25rem' }}>
-              <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.75rem' }}>
-                <BadgePercent size={15} className="text-accent" /> Revenue History
-                <HelpIcon text="The last 12 months of this client's account: dark bars are amounts invoiced in that month; green bars are payments actually received in that month." size={12} />
-              </h3>
-              {history.every(h => h.billed === 0 && h.collected === 0) ? (
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No billing activity in the last 12 months.</p>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 110 }}>
-                    {history.map(h => (
-                      <div key={h.month_key} title={`${h.month_name}: billed ${formatCurrency(h.billed)}, collected ${formatCurrency(h.collected)}`}
-                        style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%' }}>
-                        <div style={{ flex: 1, height: `${Math.max((h.billed / maxHistory) * 100, h.billed > 0 ? 4 : 0)}%`, background: 'var(--accent)', borderRadius: 2, opacity: 0.85 }} />
-                        <div style={{ flex: 1, height: `${Math.max((h.collected / maxHistory) * 100, h.collected > 0 ? 4 : 0)}%`, background: 'var(--success)', borderRadius: 2, opacity: 0.85 }} />
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                    <span>{history[0]?.month_name}</span>
-                    <span>{history[history.length - 1]?.month_name}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 6, background: 'var(--accent)', borderRadius: 2, display: 'inline-block' }} /> Billed</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 6, background: 'var(--success)', borderRadius: 2, display: 'inline-block' }} /> Collected</span>
-                  </div>
-                </>
-              )}
-            </div>
+            {canViewFinancials && (
+              <div className="card" style={{ padding: '1.25rem' }}>
+                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.75rem' }}>
+                  <BadgePercent size={15} className="text-accent" /> Revenue History
+                  <HelpIcon text="The last 12 months of this client's account: dark bars are amounts invoiced in that month; green bars are payments actually received in that month." size={12} />
+                </h3>
+                {history.every(h => h.billed === 0 && h.collected === 0) ? (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No billing activity in the last 12 months.</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 110 }}>
+                      {history.map(h => (
+                        <div key={h.month_key} title={`${h.month_name}: billed ${formatCurrency(h.billed)}, collected ${formatCurrency(h.collected)}`}
+                          style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%' }}>
+                          <div style={{ flex: 1, height: `${Math.max((h.billed / maxHistory) * 100, h.billed > 0 ? 4 : 0)}%`, background: 'var(--accent)', borderRadius: 2, opacity: 0.85 }} />
+                          <div style={{ flex: 1, height: `${Math.max((h.collected / maxHistory) * 100, h.collected > 0 ? 4 : 0)}%`, background: 'var(--success)', borderRadius: 2, opacity: 0.85 }} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                      <span>{history[0]?.month_name}</span>
+                      <span>{history[history.length - 1]?.month_name}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 6, background: 'var(--accent)', borderRadius: 2, display: 'inline-block' }} /> Billed</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 6, background: 'var(--success)', borderRadius: 2, display: 'inline-block' }} /> Collected</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

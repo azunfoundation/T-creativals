@@ -13,6 +13,7 @@ import {
   File, Download, Trash, Star, Share2, Pencil, Flag
 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuthStore } from '@/store/auth';
 import {
   projects as projectsApi,
   users as usersApi,
@@ -61,13 +62,25 @@ const PROJECT_DETAIL_HOWTO = {
   ],
 };
 
+import { useWorkspace } from '@/providers/WorkspaceProvider';
+import { useEffect } from 'react';
+
 export default function ProjectDetailPage() {
+  const { user } = useAuthStore();
+  const { setActiveProjectId } = useWorkspace();
+  const canViewFinancials = user?.permissions?.includes('projects.profitability') || user?.permissions?.includes('reports.view_financial');
   const { confirm, prompt } = useModal();
   const { showToast } = useToast();
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
   const projectId = parseInt(params.id as string) || 1;
+
+  useEffect(() => {
+    if (projectId) {
+      setActiveProjectId(projectId);
+    }
+  }, [projectId, setActiveProjectId]);
 
   // UI Tabs State
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'timesheets' | 'profitability' | 'documents' | 'team_activity'>('overview');
@@ -170,7 +183,8 @@ export default function ProjectDetailPage() {
     queryFn: async () => {
       const res = await projectsApi.profitability(projectId);
       return res.data;
-    }
+    },
+    enabled: !!user && canViewFinancials,
   });
 
   const { data: users = [] } = useQuery<User[]>({
@@ -507,26 +521,28 @@ export default function ProjectDetailPage() {
         
         {/* Header Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button
-            onClick={openEditDrawer}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              padding: '0.5rem 1rem',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: 'var(--text-secondary)',
-              background: 'var(--surface-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              cursor: 'pointer',
-            }}
-            className="hover:text-primary hover:bg-surface"
-          >
-            <Pencil size={14} />
-            Edit Project
-          </button>
+          {user?.permissions?.includes('projects.edit') && (
+            <button
+              onClick={openEditDrawer}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                padding: '0.5rem 1rem',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                background: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+              }}
+              className="hover:text-primary hover:bg-surface"
+            >
+              <Pencil size={14} />
+              Edit Project
+            </button>
+          )}
           
           <button
             style={{
@@ -595,7 +611,9 @@ export default function ProjectDetailPage() {
           height: '48px'
         }}>
           <div style={{ display: 'flex', gap: '1.5rem', height: '100%' }}>
-            {(['overview', 'tasks', 'timesheets', 'profitability', 'documents', 'team_activity'] as const).map((tab) => (
+            {(['overview', 'tasks', 'timesheets', 'profitability', 'documents', 'team_activity'] as const)
+              .filter((tab) => tab !== 'profitability' || canViewFinancials)
+              .map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -699,15 +717,17 @@ export default function ProjectDetailPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                      <span>Budget Used</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(amountSpent)} / {formatCurrency(budgetVal)}</span>
+                  {canViewFinancials && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                        <span>Budget Used</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(amountSpent)} / {formatCurrency(budgetVal)}</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'var(--surface-elevated)', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(100, (amountSpent / (budgetVal || 1)) * 100)}%`, background: '#7C3AED' }} />
+                      </div>
                     </div>
-                    <div style={{ height: '6px', background: 'var(--surface-elevated)', borderRadius: '999px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.min(100, (amountSpent / (budgetVal || 1)) * 100)}%`, background: '#7C3AED' }} />
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Project Stats Card */}

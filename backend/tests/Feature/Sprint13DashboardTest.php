@@ -289,4 +289,83 @@ class Sprint13DashboardTest extends TestCase
             'Approved payroll run did not appear in the current month\'s payroll cost'
         );
     }
+
+    /**
+     * Assert that ProjectResource and ClientController filter out financial metrics
+     * for plain employees (employee role) who lack projects.profitability or reports.view_financial.
+     */
+    public function test_financial_information_is_hidden_from_employees(): void
+    {
+        $this->employee->givePermissionTo('clients.view');
+
+        // 1. Create a client and a project with a budget
+        $clientUser = User::factory()->create(['status' => 'active']);
+        $clientUser->assignRole('client');
+
+        $project = Project::create([
+            'project_number' => 'PRJ-FIN-SEC-1',
+            'name' => 'Financial Security Fixture',
+            'client_id' => $clientUser->id,
+            'manager_id' => $this->founder->id,
+            'status' => 'active',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->addMonth()->toDateString(),
+            'budget_amount' => 500000,
+        ]);
+
+        $project->members()->create([
+            'user_id' => $this->employee->id,
+            'role' => 'member',
+            'joined_at' => now(),
+        ]);
+
+        // 2. Fetch projects list as employee
+        $response = $this->actingAs($this->employee, 'sanctum')
+            ->getJson('/api/v1/projects')
+            ->assertStatus(200);
+        
+        $projectData = collect($response->json()['data'])->firstWhere('id', $project->id);
+        $this->assertNotNull($projectData);
+        $this->assertArrayHasKey('budget_amount', $projectData);
+        $this->assertNull($projectData['budget_amount'], 'Employee should not see budget_amount');
+        $this->assertNull($projectData['invoice_id'], 'Employee should not see invoice_id');
+        $this->assertNull($projectData['invoice'], 'Employee should not see invoice details');
+
+        // 3. Fetch project details as employee
+        $responseDetails = $this->actingAs($this->employee, 'sanctum')
+            ->getJson("/api/v1/projects/{$project->id}")
+            ->assertStatus(200)
+            ->json();
+        
+        $this->assertNull($responseDetails['data']['budget_amount'], 'Employee should not see budget_amount in project details');
+
+        // 4. Fetch clients list as employee
+        $clientResponse = $this->actingAs($this->employee, 'sanctum')
+            ->getJson('/api/v1/clients')
+            ->assertStatus(200)
+            ->json();
+        
+        $this->assertEquals(0.0, $clientResponse['summary']['total_billed'], 'Summary total_billed should be zero for employee');
+        $this->assertEquals(0.0, $clientResponse['summary']['total_collected'], 'Summary total_collected should be zero for employee');
+        $this->assertEquals(0.0, $clientResponse['summary']['total_outstanding'], 'Summary total_outstanding should be zero for employee');
+
+        foreach ($clientResponse['breakdown'] as $c) {
+            $this->assertEquals(0.0, $c['total_billed'], 'Client breakdown total_billed should be zero for employee');
+            $this->assertEquals(0.0, $c['total_paid'], 'Client breakdown total_paid should be zero for employee');
+            $this->assertEquals(0.0, $c['total_outstanding'], 'Client breakdown total_outstanding should be zero for employee');
+        }
+
+        // 5. Fetch client details as employee
+        $clientDetails = $this->actingAs($this->employee, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientUser->id}")
+            ->assertStatus(200)
+            ->json();
+        
+        $this->assertEquals(0.0, $clientDetails['totals']['total_billed'], 'Client details total_billed should be zero for employee');
+        $this->assertEquals(0.0, $clientDetails['totals']['total_paid'], 'Client details total_paid should be zero for employee');
+        $this->assertEquals(0.0, $clientDetails['totals']['total_outstanding'], 'Client details total_outstanding should be zero for employee');
+        $this->assertSame([], $clientDetails['revenue_history'], 'Client details revenue_history should be empty for employee');
+        $this->assertSame([], $clientDetails['invoices']['items'], 'Client details invoices should be empty for employee');
+        $this->assertSame(0, $clientDetails['invoices']['total_count'], 'Client details invoices count should be zero');
+    }
 }

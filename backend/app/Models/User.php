@@ -43,6 +43,7 @@ class User extends Authenticatable
         'billing_address',
         'tax_number',
         'default_currency_id',
+        'workspace_preferences',
     ];
 
     protected $hidden = [
@@ -58,6 +59,7 @@ class User extends Authenticatable
             'password'          => 'hashed',
             'is_client_portal_user' => 'boolean',
             'must_change_password'  => 'boolean',
+            'workspace_preferences' => 'array',
         ];
     }
 

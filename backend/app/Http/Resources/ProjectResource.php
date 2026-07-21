@@ -11,6 +11,9 @@ class ProjectResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $user = $request->user();
+        $canViewFinancials = $user && ($user->hasPermissionTo('projects.profitability') || $user->hasPermissionTo('reports.view_financial'));
+
         return [
             'id' => $this->id,
             'project_number' => $this->project_number,
@@ -22,11 +25,11 @@ class ProjectResource extends JsonResource
                 'name' => $this->client->name,
                 'email' => $this->client->email,
             ] : null),
-            'invoice_id' => $this->invoice_id,
-            'invoice' => $this->whenLoaded('invoice', fn () => $this->invoice ? [
+            'invoice_id' => $canViewFinancials ? $this->invoice_id : null,
+            'invoice' => $canViewFinancials ? $this->whenLoaded('invoice', fn () => $this->invoice ? [
                 'id' => $this->invoice->id,
                 'invoice_number' => $this->invoice->invoice_number,
-            ] : null),
+            ] : null) : null,
             'manager_id' => $this->manager_id,
             'manager' => $this->whenLoaded('manager', fn () => $this->manager ? [
                 'id' => $this->manager->id,
@@ -38,7 +41,7 @@ class ProjectResource extends JsonResource
             'start_date' => $this->start_date?->toDateString(),
             'end_date' => $this->end_date?->toDateString(),
             'budget_hours' => $this->budget_hours,
-            'budget_amount' => $this->budget_amount,
+            'budget_amount' => $canViewFinancials ? $this->budget_amount : null,
             'completion_percentage' => $this->completion_percentage,
             'is_recurring' => $this->is_recurring,
             'created_at' => $this->created_at?->toIso8601String(),

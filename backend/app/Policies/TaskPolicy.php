@@ -38,10 +38,25 @@ class TaskPolicy
             return false;
         }
 
-        return $task->assigned_to === $user->id
+        if ($user->hasRole('director') || $user->hasRole('admin') || $user->hasPermissionTo('tasks.view_all')) {
+            return true;
+        }
+
+        if ($task->assigned_to === $user->id
             || $task->created_by === $user->id
-            || $task->project->manager_id === $user->id
-            || $task->project->members()->where('user_id', $user->id)->exists();
+            || ($task->project && $task->project->manager_id === $user->id)
+            || ($task->project && $task->project->members()->where('user_id', $user->id)->exists())) {
+            return true;
+        }
+
+        if ($user->hasRole('department_head') && $task->assignee) {
+            $deptIds = $user->departments()->pluck('departments.id')->toArray();
+            if (!empty($deptIds) && $task->assignee->departments()->whereIn('departments.id', $deptIds)->exists()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

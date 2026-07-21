@@ -105,6 +105,7 @@ class ClientController extends Controller
             ->get()
             ->keyBy('client_id');
 
+        $canViewFinancials = $request->user()->hasPermissionTo('reports.view_financial');
         $breakdown = [];
         $totalBilledAll = 0.0;
         $totalPaidAll = 0.0;
@@ -119,9 +120,9 @@ class ClientController extends Controller
                 $activeClientsCount++;
             }
 
-            $totalBilled = (float) ($invStats->total_billed ?? 0.0);
-            $totalPaid = (float) ($invStats->total_paid ?? 0.0);
-            $totalOutstanding = (float) ($invStats->total_outstanding ?? 0.0);
+            $totalBilled = $canViewFinancials ? (float) ($invStats->total_billed ?? 0.0) : 0.0;
+            $totalPaid = $canViewFinancials ? (float) ($invStats->total_paid ?? 0.0) : 0.0;
+            $totalOutstanding = $canViewFinancials ? (float) ($invStats->total_outstanding ?? 0.0) : 0.0;
             $totalBilledAll += $totalBilled;
             $totalPaidAll += $totalPaid;
             $totalOutstandingAll += $totalOutstanding;
@@ -157,9 +158,9 @@ class ClientController extends Controller
             'summary' => [
                 'total_clients' => $clients->count(),
                 'total_active' => $activeClientsCount,
-                'total_billed' => round($totalBilledAll, 2),
-                'total_collected' => round($totalPaidAll, 2),
-                'total_outstanding' => round($totalOutstandingAll, 2),
+                'total_billed' => $canViewFinancials ? round($totalBilledAll, 2) : 0.0,
+                'total_collected' => $canViewFinancials ? round($totalPaidAll, 2) : 0.0,
+                'total_outstanding' => $canViewFinancials ? round($totalOutstandingAll, 2) : 0.0,
             ],
             'breakdown' => $breakdown,
         ]);
@@ -234,12 +235,18 @@ class ClientController extends Controller
      */
     public function show(Request $request, User $client): JsonResponse
     {
-        if (!$request->user()->hasPermissionTo('clients.view')) {
+        $user = $request->user();
+        if (!$user->hasPermissionTo('clients.view')) {
             return $this->deny();
         }
         if ($resp = $this->assertIsClient($client)) {
             return $resp;
         }
+
+        $canViewInvoices = $user->hasPermissionTo('invoices.view') || $user->hasPermissionTo('invoices.view_all') || $user->hasAnyPermission(['quotes.view', 'leads.view']);
+        $canViewQuotes = $user->hasPermissionTo('quotes.view') || $user->hasPermissionTo('quotes.view_all') || $user->hasAnyPermission(['quotes.view', 'leads.view']);
+        $canViewFinancials = $user->hasPermissionTo('reports.view_financial') || $user->hasAnyPermission(['invoices.view', 'quotes.view', 'leads.view']);
+        $canViewProfitability = $user->hasPermissionTo('projects.profitability') || $user->hasPermissionTo('reports.view_financial');
 
         $client->load([
             'clientContacts' => function ($q) {
@@ -254,6 +261,13 @@ class ClientController extends Controller
             ->select('id', 'project_number', 'name', 'status', 'completion_percentage', 'start_date', 'end_date', 'budget_amount')
             ->orderByDesc('created_at')
             ->get();
+
+        if (!$canViewProfitability) {
+            $projects = $projects->map(function ($p) {
+                unset($p->budget_amount);
+                return $p;
+            });
+        }
 
         // One lightweight full fetch for totals + monthly history; the
         // rendered list is capped separately below.
@@ -300,38 +314,40 @@ class ClientController extends Controller
 
         // 12-month billed vs collected history
         $history = [];
-        $monthKeys = [];
-        for ($i = 11; $i >= 0; $i--) {
-            $m = Carbon::now()->subMonths($i);
-            $key = $m->format('Y-m');
-            $monthKeys[$key] = count($history);
-            $history[] = [
-                'month_key' => $key,
-                'month_name' => $m->format('M Y'),
-                'billed' => 0.0,
-                'collected' => 0.0,
-            ];
-        }
-        foreach ($invoiceRows as $inv) {
-            if (!$inv->issue_date || !in_array($inv->status, self::REVENUE_INVOICE_STATUSES, true)) {
-                continue;
+        if ($canViewFinancials) {
+            $monthKeys = [];
+            for ($i = 11; $i >= 0; $i--) {
+                $m = Carbon::now()->subMonths($i);
+                $key = $m->format('Y-m');
+                $monthKeys[$key] = count($history);
+                $history[] = [
+                    'month_key' => $key,
+                    'month_name' => $m->format('M Y'),
+                    'billed' => 0.0,
+                    'collected' => 0.0,
+                ];
             }
-            $key = substr((string) $inv->issue_date, 0, 7);
-            if (isset($monthKeys[$key])) {
-                $history[$monthKeys[$key]]['billed'] += (float) $inv->total_amount * (float) $inv->exchange_rate;
+            foreach ($invoiceRows as $inv) {
+                if (!$inv->issue_date || !in_array($inv->status, self::REVENUE_INVOICE_STATUSES, true)) {
+                    continue;
+                }
+                $key = substr((string) $inv->issue_date, 0, 7);
+                if (isset($monthKeys[$key])) {
+                    $history[$monthKeys[$key]]['billed'] += (float) $inv->total_amount * (float) $inv->exchange_rate;
+                }
             }
-        }
-        foreach ($paymentRows as $pay) {
-            $key = substr((string) $pay->payment_date, 0, 7);
-            if (isset($monthKeys[$key])) {
-                $history[$monthKeys[$key]]['collected'] += (float) $pay->amount * (float) $pay->exchange_rate;
+            foreach ($paymentRows as $pay) {
+                $key = substr((string) $pay->payment_date, 0, 7);
+                if (isset($monthKeys[$key])) {
+                    $history[$monthKeys[$key]]['collected'] += (float) $pay->amount * (float) $pay->exchange_rate;
+                }
             }
+            foreach ($history as &$h) {
+                $h['billed'] = round($h['billed'], 2);
+                $h['collected'] = round($h['collected'], 2);
+            }
+            unset($h);
         }
-        foreach ($history as &$h) {
-            $h['billed'] = round($h['billed'], 2);
-            $h['collected'] = round($h['collected'], 2);
-        }
-        unset($h);
 
         $onHold = $projects->where('status', 'on_hold')->count();
         $cancelled = $projects->where('status', 'cancelled')->count();
@@ -360,17 +376,17 @@ class ClientController extends Controller
                 'total_count' => $projects->count(),
             ],
             'invoices' => [
-                'items' => $invoiceRows->take(25)->values(),
-                'total_count' => $invoiceRows->count(),
+                'items' => $canViewInvoices ? $invoiceRows->take(25)->values() : collect([]),
+                'total_count' => $canViewInvoices ? $invoiceRows->count() : 0,
             ],
             'quotes' => [
-                'items' => $quotes,
-                'total_count' => $quotesTotal,
+                'items' => $canViewQuotes ? $quotes : collect([]),
+                'total_count' => $canViewQuotes ? $quotesTotal : 0,
             ],
             'totals' => [
-                'total_billed' => round($totalBilled, 2),
-                'total_paid' => round($totalPaid, 2),
-                'total_outstanding' => round($totalOutstanding, 2),
+                'total_billed' => $canViewFinancials ? round($totalBilled, 2) : 0.0,
+                'total_paid' => $canViewFinancials ? round($totalPaid, 2) : 0.0,
+                'total_outstanding' => $canViewFinancials ? round($totalOutstanding, 2) : 0.0,
             ],
             'revenue_history' => $history,
             'health' => $health,

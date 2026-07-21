@@ -28,10 +28,10 @@ class TaskController extends Controller
         $user = $request->user();
         $query = Task::query()->with(['project', 'assignee', 'milestone']);
 
-        if ($user->hasRole('founder')) {
-            // Founder can see all tasks
+        if ($user->hasRole('founder') || $user->hasRole('director') || $user->hasRole('admin') || $user->hasPermissionTo('tasks.view_all')) {
+            // Founder, Director, Admin, or users with tasks.view_all permission can see all tasks across the company
         } else {
-            // Filter tasks by assignment, creation, or project membership
+            // Filter tasks by assignment, creation, project membership, or department management
             $query->where(function ($q) use ($user) {
                 $q->where('assigned_to', $user->id)
                   ->orWhere('created_by', $user->id)
@@ -41,26 +41,47 @@ class TaskController extends Controller
                             $mq->where('user_id', $user->id);
                         });
                   });
+
+                if ($user->hasRole('department_head')) {
+                    $deptIds = $user->departments()->pluck('departments.id')->toArray();
+                    if (!empty($deptIds)) {
+                        $q->orWhereHas('assignee.departments', function ($dq) use ($deptIds) {
+                            $dq->whereIn('departments.id', $deptIds);
+                        });
+                    }
+                }
             });
         }
 
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
         }
-        if ($request->has('priority')) {
+        if ($request->filled('priority')) {
             $query->where('priority', $request->input('priority'));
         }
-        if ($request->has('project_id')) {
+        if ($request->filled('project_id')) {
             $query->where('project_id', $request->input('project_id'));
         }
-        if ($request->has('assigned_to')) {
+        if ($request->filled('assigned_to')) {
             $query->where('assigned_to', $request->input('assigned_to'));
         }
-        if ($request->has('parent_task_id')) {
+        if ($request->filled('parent_task_id')) {
             $query->where('parent_task_id', $request->input('parent_task_id'));
         }
+        if ($request->filled('department_id')) {
+            $query->whereHas('assignee.departments', function ($dq) use ($request) {
+                $dq->where('departments.id', $request->input('department_id'));
+            });
+        }
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($sq) use ($search) {
+                $sq->where('title', 'like', "%{$search}%")
+                   ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
 
-        $tasks = $query->paginate((int) $request->input('per_page', 15));
+        $tasks = $query->paginate((int) $request->input('per_page', 250));
         return TaskResource::collection($tasks)->response();
     }
 
@@ -514,6 +535,77 @@ class TaskController extends Controller
 
         $task->load(['project', 'assignee', 'milestone']);
         return (new TaskResource($task))->response();
+    }
+
+    /**
+     * Complete the task and timer: stop timer, log timesheet, mark task done (100%),
+     * update actual_hours, update project completion %, and recalculate labor cost & profitability.
+     */
+    public function completeTimer(Request $request, Task $task): JsonResponse
+    {
+        Gate::authorize('update', $task);
+
+        $totalSeconds = $task->timer_accumulated_seconds + $this->timerElapsedSeconds($task);
+        $hoursToLog = round($totalSeconds / 3600, 2);
+
+        // If time was tracked or timer was active, log a timesheet entry
+        if ($hoursToLog > 0 || $totalSeconds > 0) {
+            $effectiveHours = max(0.01, min($hoursToLog > 0 ? $hoursToLog : 0.1, 24.0));
+            
+            Gate::authorize('create', Timesheet::class);
+            Timesheet::create([
+                'user_id' => $request->user()->id,
+                'task_id' => $task->id,
+                'project_id' => $task->project_id,
+                'date' => now()->toDateString(),
+                'hours_logged' => $effectiveHours,
+                'description' => 'Logged via One-Click Task Completion',
+                'is_billable' => true,
+                'status' => 'approved',
+            ]);
+        }
+
+        // Calculate total actual hours from all timesheets for this task
+        $totalTaskHours = (float) Timesheet::where('task_id', $task->id)->sum('hours_logged');
+
+        // Update task status, completion percentage, actual_hours, and clear timer fields
+        $task->update([
+            'status' => 'done',
+            'completion_percentage' => 100,
+            'actual_hours' => max((float)$task->actual_hours, $totalTaskHours),
+            'timer_started_at' => null,
+            'timer_accumulated_seconds' => 0,
+        ]);
+
+        $task->load(['project', 'assignee', 'milestone']);
+
+        // Update Project completion percentage and metrics if linked to a project
+        $projectData = null;
+        if ($task->project_id && $project = $task->project) {
+            $totalProjectTasks = $project->tasks()->count();
+            $completedProjectTasks = $project->tasks()->where('status', 'done')->count();
+
+            if ($totalProjectTasks > 0) {
+                $newProjectCompletion = (int) round(($completedProjectTasks / $totalProjectTasks) * 100);
+                $project->update(['completion_percentage' => $newProjectCompletion]);
+            }
+
+            $profitabilityService = new \App\Services\ProfitabilityService();
+            $projectData = [
+                'completion_percentage' => $project->completion_percentage,
+                'profitability' => $profitabilityService->calculate($project),
+            ];
+        }
+
+        $responseData = (new TaskResource($task))->toArray($request);
+        if ($projectData) {
+            $responseData['project_metrics'] = $projectData;
+        }
+
+        return response()->json([
+            'data' => $responseData,
+            'message' => 'Task completed successfully',
+        ]);
     }
 
     private function timerElapsedSeconds(Task $task): int

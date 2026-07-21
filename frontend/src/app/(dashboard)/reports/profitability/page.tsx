@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reports } from '@/lib/api';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import ReportShell from '@/components/reports/ReportShell';
 import KpiCard from '@/components/reports/KpiCard';
 import ReportTable from '@/components/reports/ReportTable';
@@ -22,8 +23,24 @@ export default function ProjectProfitabilityReport() {
     return { from: `${fyStartYear}-04-01`, to: `${fyStartYear + 1}-03-31` };
   };
 
+  const { getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
   const [dates, setDates] = useState(getInitialDates());
+  const [isInitialized, setIsInitialized] = useState(false);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('report_profitability', null);
+    if (saved && saved.from && saved.to) {
+      setDates({ from: saved.from, to: saved.to });
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('report_profitability', dates);
+  }, [isInitialized, dates, setPagePreference]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['reports', 'profitability', dates.from, dates.to],

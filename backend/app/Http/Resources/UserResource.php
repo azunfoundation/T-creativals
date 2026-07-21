@@ -27,6 +27,7 @@ class UserResource extends JsonResource
                 : null,
             'status'      => $this->status,
             'hourly_rate' => (float) ($this->hourly_rate ?? 0.00),
+            'workspace_preferences' => $this->workspace_preferences ?? new \stdClass(),
 
             // Roles: array of role objects
             'roles' => $this->roles->map(fn($role) => [

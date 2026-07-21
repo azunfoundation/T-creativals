@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/useToast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckSquare, Search, Plus, List, LayoutGrid, Calendar, MoreHorizontal,
-  Trash2, User, Clock, AlertCircle, PlusCircle, CheckCircle2, RefreshCw, X, FolderOpen,
+  Trash2, User, Users, Building, Clock, AlertCircle, PlusCircle, CheckCircle2, RefreshCw, X, FolderOpen,
   Play, Tag as TagIcon, Eye, Lock, Loader2, TrendingUp,
   AlertTriangle, Filter, ListChecks
 } from 'lucide-react';
@@ -16,10 +16,14 @@ import {
   tasks as tasksApi,
   projects as projectsApi,
   users as usersApi,
-  Task, Project, User as UserType,
+  departments as departmentsApi,
+  Task, Project, User as UserType, Department, TaskListParams,
   getApiErrorMessage
 } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import TaskDetailSlideOver from '@/components/TaskDetailSlideOver';
+import { TaskTimerControls } from '@/components/TaskTimerControls';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import { formatDate, formatRelativeTime } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
@@ -149,13 +153,134 @@ export default function TasksPage() {
     persistCategories(categories.filter((c) => c !== name));
   };
 
-  // Filters State
+  // User Auth & Role detection
+  const { user } = useAuthStore();
+  const isExecutive = !!user?.roles?.some((r) => ['founder', 'director', 'admin'].includes(r.name));
+  const isDepartmentHead = !!user?.roles?.some((r) => r.name === 'department_head');
+  const isManagerOrLead = !!user?.roles?.some((r) => ['project_manager', 'team_lead'].includes(r.name));
+  const canViewAll = isExecutive || !!user?.permissions?.includes('tasks.view_all') || isManagerOrLead || isDepartmentHead;
+  const canViewDepartment = isDepartmentHead || isExecutive;
+
+  // Workspace State & Sticky Project Context
+  const { activeProjectId, getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+
+  // Filters & Scope State
+  const [activeScope, setActiveScope] = useState<'my_tasks' | 'department' | 'all_tasks' | 'custom'>('my_tasks');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
   const [dueDateFilter, setDueDateFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize filters based on workspace preferences or role default
+  useEffect(() => {
+    if (!user || isInitialized || !workspaceLoaded) return;
+    const saved = getPagePreference<any>('tasks', null);
+
+    if (saved) {
+      if (saved.viewMode && (saved.viewMode === 'kanban' || saved.viewMode === 'list')) {
+        setViewMode(saved.viewMode);
+      }
+      if (saved.activeScope) setActiveScope(saved.activeScope);
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.projectFilter !== undefined) {
+        setProjectFilter(saved.projectFilter);
+      } else if (activeProjectId) {
+        setProjectFilter(String(activeProjectId));
+      }
+      if (saved.priorityFilter !== undefined) setPriorityFilter(saved.priorityFilter);
+      if (saved.assigneeFilter !== undefined) setAssigneeFilter(saved.assigneeFilter);
+      if (saved.departmentFilter !== undefined) setDepartmentFilter(saved.departmentFilter);
+      if (saved.dueDateFilter !== undefined) setDueDateFilter(saved.dueDateFilter);
+      if (saved.tagFilter !== undefined) setTagFilter(saved.tagFilter);
+    } else {
+      // Role-aware default initialization
+      if (isExecutive) {
+        setActiveScope('all_tasks');
+        setAssigneeFilter('');
+        setDepartmentFilter('');
+      } else {
+        setActiveScope('my_tasks');
+        setAssigneeFilter(String(user.id));
+        setDepartmentFilter('');
+      }
+      if (activeProjectId) {
+        setProjectFilter(String(activeProjectId));
+      }
+    }
+    setIsInitialized(true);
+  }, [user, isExecutive, isInitialized, workspaceLoaded, getPagePreference, activeProjectId]);
+
+  // Persist filter changes to workspace preferences once initialized
+  useEffect(() => {
+    if (!user || !isInitialized) return;
+    setPagePreference('tasks', {
+      viewMode,
+      activeScope,
+      searchQuery,
+      projectFilter,
+      priorityFilter,
+      assigneeFilter,
+      departmentFilter,
+      dueDateFilter,
+      tagFilter,
+    });
+  }, [
+    user,
+    isInitialized,
+    viewMode,
+    activeScope,
+    searchQuery,
+    projectFilter,
+    priorityFilter,
+    assigneeFilter,
+    departmentFilter,
+    dueDateFilter,
+    tagFilter,
+    setPagePreference,
+  ]);
+
+  // Quick Scope & Filter Handlers
+  const handleScopeChange = (scope: 'my_tasks' | 'department' | 'all_tasks') => {
+    setActiveScope(scope);
+    if (scope === 'my_tasks') {
+      setAssigneeFilter(user ? String(user.id) : '');
+      setDepartmentFilter('');
+    } else if (scope === 'department') {
+      setAssigneeFilter('');
+      const userDeptId = user?.departments?.[0]?.id;
+      setDepartmentFilter(userDeptId ? String(userDeptId) : '');
+    } else if (scope === 'all_tasks') {
+      setAssigneeFilter('');
+      setDepartmentFilter('');
+    }
+  };
+
+  const handleAssigneeChange = (val: string) => {
+    setAssigneeFilter(val);
+    if (user && val === String(user.id)) {
+      setActiveScope('my_tasks');
+      setDepartmentFilter('');
+    } else if (val === '') {
+      setActiveScope('all_tasks');
+    } else {
+      setActiveScope('custom');
+      setDepartmentFilter('');
+    }
+  };
+
+  const handleDepartmentChange = (val: string) => {
+    setDepartmentFilter(val);
+    if (val !== '') {
+      setActiveScope('department');
+      setAssigneeFilter('');
+    } else {
+      setActiveScope('all_tasks');
+    }
+  };
 
   // Drag and Drop Column state
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
@@ -182,16 +307,29 @@ export default function TasksPage() {
   // ============================================================
 
   const { data: tasksData, isLoading, refetch } = useQuery({
-    queryKey: ['globalTasks'],
+    queryKey: ['globalTasks', {
+      assigneeFilter,
+      projectFilter,
+      priorityFilter,
+      departmentFilter,
+      searchQuery,
+    }],
     queryFn: async () => {
-      const res = await tasksApi.list({ per_page: 250 });
-      // If interceptor returns paginated response envelope, extract data array
+      const params: TaskListParams = { per_page: 250 };
+      if (assigneeFilter) params.assigned_to = parseInt(assigneeFilter);
+      if (projectFilter) params.project_id = parseInt(projectFilter);
+      if (priorityFilter) params.priority = priorityFilter;
+      if (departmentFilter) params.department_id = parseInt(departmentFilter);
+      if (searchQuery) params.search = searchQuery;
+
+      const res = await tasksApi.list(params);
       const payload = res.data as any;
       if (payload && Array.isArray(payload.data)) {
         return payload.data as Task[];
       }
       return (Array.isArray(payload) ? payload : []) as Task[];
-    }
+    },
+    enabled: !!user && isInitialized,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -210,6 +348,18 @@ export default function TasksPage() {
     queryKey: ['usersList'],
     queryFn: async () => {
       const res = await usersApi.list({ per_page: 100 });
+      const payload = res.data as any;
+      if (payload && Array.isArray(payload.data)) {
+        return payload.data;
+      }
+      return Array.isArray(payload) ? payload : [];
+    }
+  });
+
+  const { data: departments = [] } = useQuery<Department[]>({
+    queryKey: ['departmentsList'],
+    queryFn: async () => {
+      const res = await departmentsApi.list();
       const payload = res.data as any;
       if (payload && Array.isArray(payload.data)) {
         return payload.data;
@@ -361,9 +511,17 @@ export default function TasksPage() {
     setSearchQuery('');
     setProjectFilter('');
     setPriorityFilter('');
-    setAssigneeFilter('');
     setDueDateFilter('');
     setTagFilter('');
+    setDepartmentFilter('');
+
+    if (isExecutive) {
+      setActiveScope('all_tasks');
+      setAssigneeFilter('');
+    } else {
+      setActiveScope('my_tasks');
+      setAssigneeFilter(user ? String(user.id) : '');
+    }
   };
 
   // ============================================================
@@ -377,7 +535,7 @@ export default function TasksPage() {
   const allTags = Array.from(new Set(taskList.flatMap((t) => t.tags ?? []))).sort();
 
   const filteredTasks = taskList.filter((t) => {
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (t.description || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesProject = !projectFilter || t.project_id === parseInt(projectFilter);
     const matchesPriority = !priorityFilter || t.priority === priorityFilter;
@@ -407,12 +565,20 @@ export default function TasksPage() {
   const blockedTasks = filteredTasks.filter((t) => t.status === 'blocked');
   const doneTasks = filteredTasks.filter((t) => t.status === 'done');
 
-  const hasActiveFilters = !!(searchQuery || projectFilter || priorityFilter || assigneeFilter || dueDateFilter || tagFilter);
+  const defaultAssignee = isExecutive ? '' : (user ? String(user.id) : '');
+  const hasActiveFilters = !!(
+    searchQuery ||
+    projectFilter ||
+    priorityFilter ||
+    assigneeFilter !== defaultAssignee ||
+    departmentFilter ||
+    dueDateFilter ||
+    tagFilter
+  );
 
   // ============================================================
   // Sidebar & Analytics Data
   // ============================================================
-
 
   const priorityDistribution = (Object.keys(PRIORITY_META) as Array<keyof typeof PRIORITY_META>).map((key) => ({
     label: PRIORITY_META[key].label,
@@ -435,7 +601,6 @@ export default function TasksPage() {
   const completionRate = taskList.length > 0 ? (doneTasks.length / taskList.length) * 100 : 0;
   const completionTrend = pctChangeOverWeek(doneTasks.map((t) => t.updated_at));
 
-
   return (
     <div style={{ maxWidth: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
@@ -457,12 +622,67 @@ export default function TasksPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Role-Aware Quick Toggle Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'var(--surface-elevated)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+            <button
+              onClick={() => handleScopeChange('my_tasks')}
+              className="btn btn-sm"
+              style={{
+                background: activeScope === 'my_tasks' ? 'var(--accent)' : 'transparent',
+                color: activeScope === 'my_tasks' ? '#fff' : 'var(--text-secondary)',
+                fontWeight: activeScope === 'my_tasks' ? 600 : 500,
+                padding: '0.375rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem'
+              }}
+              title="View tasks assigned to me"
+            >
+              <User size={14} /> My Tasks
+            </button>
+
+            {canViewDepartment && (
+              <button
+                onClick={() => handleScopeChange('department')}
+                className="btn btn-sm"
+                style={{
+                  background: activeScope === 'department' ? 'var(--accent)' : 'transparent',
+                  color: activeScope === 'department' ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: activeScope === 'department' ? 600 : 500,
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem'
+                }}
+                title="View tasks for my department"
+              >
+                <Users size={14} /> Department
+              </button>
+            )}
+
+            {canViewAll && (
+              <button
+                onClick={() => handleScopeChange('all_tasks')}
+                className="btn btn-sm"
+                style={{
+                  background: activeScope === 'all_tasks' ? 'var(--accent)' : 'transparent',
+                  color: activeScope === 'all_tasks' ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: activeScope === 'all_tasks' ? 600 : 500,
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem'
+                }}
+                title="View all company tasks"
+              >
+                <FolderOpen size={14} /> All Tasks
+              </button>
+            )}
+          </div>
+
           <button
             onClick={() => setShowCategoriesModal(true)}
             className="btn btn-sm"
             style={{ background: 'var(--surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            <TagIcon size={14} style={{ color: 'var(--accent)' }} /> Manage Categories
+            <TagIcon size={14} style={{ color: 'var(--accent)' }} /> Categories
           </button>
 
           {/* Toggle view mode */}
@@ -577,15 +797,32 @@ export default function TasksPage() {
 
             <select
               value={assigneeFilter}
-              onChange={(e) => setAssigneeFilter(e.target.value)}
+              onChange={(e) => handleAssigneeChange(e.target.value)}
               className="form-input"
-              style={{ width: '150px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+              style={{ width: '160px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
             >
               <option value="">All Assignees</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
+              {user && (
+                <option value={String(user.id)}>{user.name} (Me)</option>
+              )}
+              {users.filter(u => u.id !== user?.id).map((u) => (
+                <option key={u.id} value={String(u.id)}>{u.name}</option>
               ))}
             </select>
+
+            {departments.length > 0 && (
+              <select
+                value={departmentFilter}
+                onChange={(e) => handleDepartmentChange(e.target.value)}
+                className="form-input"
+                style={{ minWidth: '150px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={String(d.id)}>{d.name}</option>
+                ))}
+              </select>
+            )}
 
             <button
               onClick={() => setShowMoreFilters((v) => !v)}
@@ -760,6 +997,11 @@ export default function TasksPage() {
                               </span>
                             )}
                           </div>
+
+                          {/* One-Click Time Tracking Controls */}
+                          <div style={{ paddingTop: '0.25rem' }}>
+                            <TaskTimerControls task={t} compact={true} />
+                          </div>
                         </div>
                       ))}
 
@@ -818,6 +1060,7 @@ export default function TasksPage() {
                       <th>Assignee</th>
                       <th>Due Date</th>
                       <th style={{ textAlign: 'right' }}>Estimate</th>
+                      <th>Time Tracking</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
@@ -860,6 +1103,9 @@ export default function TasksPage() {
                         <td style={{ color: 'var(--text-secondary)' }}>{t.assignee?.name || t.assignee_name || 'Unassigned'}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{t.due_date ? formatDate(t.due_date) : '—'}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 500 }}>{t.estimated_hours ? `${t.estimated_hours} hrs` : '—'}</td>
+                        <td>
+                          <TaskTimerControls task={t} compact={true} />
+                        </td>
                         <td style={{ textAlign: 'right' }}>
                           <button
                             onClick={async () => {

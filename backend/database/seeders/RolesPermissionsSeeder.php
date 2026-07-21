@@ -83,6 +83,7 @@ class RolesPermissionsSeeder extends Seeder
 
             // Tasks
             'tasks.view',
+            'tasks.view_all',
             'tasks.create',
             'tasks.edit',
             'tasks.delete',

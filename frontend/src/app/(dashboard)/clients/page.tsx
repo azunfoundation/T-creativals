@@ -64,6 +64,7 @@ export default function ClientsPage() {
   const canCreate = perms.includes('clients.create');
   const canEdit = perms.includes('clients.edit');
   const canDelete = perms.includes('clients.delete');
+  const canViewFinancials = perms.includes('reports.view_financial');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -200,7 +201,7 @@ export default function ClientsPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className={canViewFinancials ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" : "grid grid-cols-1 gap-4"}>
         <div className="kpi-card">
           <span className="kpi-label">Total Clients</span>
           <span className="kpi-value">{summary.total_clients}</span>
@@ -209,29 +210,33 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        <div className="kpi-card">
-          <span className="kpi-label">Total Billed <HelpIcon text="Lifetime total of every invoice issued to any client, converted to INR." size={11} /></span>
-          <span className="kpi-value">{formatCurrency(summary.total_billed)}</span>
-          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            All-time, all clients
-          </div>
-        </div>
+        {canViewFinancials && (
+          <>
+            <div className="kpi-card">
+              <span className="kpi-label">Total Billed <HelpIcon text="Lifetime total of every invoice issued to any client, converted to INR." size={11} /></span>
+              <span className="kpi-value">{formatCurrency(summary.total_billed)}</span>
+              <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                All-time, all clients
+              </div>
+            </div>
 
-        <div className="kpi-card">
-          <span className="kpi-label">Collected Amount</span>
-          <span className="kpi-value text-success">{formatCurrency(summary.total_collected)}</span>
-          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Collection Rate: <span className="text-success font-bold">{summary.total_billed > 0 ? Math.round((summary.total_collected / summary.total_billed) * 100) : 0}%</span>
-          </div>
-        </div>
+            <div className="kpi-card">
+              <span className="kpi-label">Collected Amount</span>
+              <span className="kpi-value text-success">{formatCurrency(summary.total_collected)}</span>
+              <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Collection Rate: <span className="text-success font-bold">{summary.total_billed > 0 ? Math.round((summary.total_collected / summary.total_billed) * 100) : 0}%</span>
+              </div>
+            </div>
 
-        <div className="kpi-card">
-          <span className="kpi-label">Outstanding Balance</span>
-          <span className="kpi-value text-warning">{formatCurrency(summary.total_outstanding)}</span>
-          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Unpaid across all clients
-          </div>
-        </div>
+            <div className="kpi-card">
+              <span className="kpi-label">Outstanding Balance</span>
+              <span className="kpi-value text-warning">{formatCurrency(summary.total_outstanding)}</span>
+              <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Unpaid across all clients
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Filter Bar */}
@@ -283,9 +288,13 @@ export default function ClientsPage() {
                 <th>Active / Total Projects</th>
                 <th>Health Score <HelpIcon text="Starts at 100 and drops for overdue invoices (-10 each), on-hold projects (-15 each), cancelled projects (-30 each), and a high unpaid balance. Open the client's page for their exact breakdown." size={12} /></th>
                 <th>Portal Access <HelpIcon text="Whether this client can log into the client portal. Click the toggle to allow or block their login instantly." size={12} /></th>
-                <th>Amount Billed <HelpIcon text="Lifetime billing across all this client's invoices, converted to INR." size={11} /></th>
-                <th>Collected</th>
-                <th>Outstanding</th>
+                {canViewFinancials && (
+                  <>
+                    <th>Amount Billed <HelpIcon text="Lifetime billing across all this client's invoices, converted to INR." size={11} /></th>
+                    <th>Collected</th>
+                    <th>Outstanding</th>
+                  </>
+                )}
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -346,15 +355,19 @@ export default function ClientsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="font-bold text-primary">{formatCurrency(c.total_billed)}</td>
-                  <td className="font-semibold text-success">{formatCurrency(c.total_paid || 0)}</td>
-                  <td className="font-semibold">
-                    {c.total_outstanding > 0 ? (
-                      <span className="text-warning">{formatCurrency(c.total_outstanding)}</span>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>— Cleared</span>
-                    )}
-                  </td>
+                  {canViewFinancials && (
+                    <>
+                      <td className="font-bold text-primary">{formatCurrency(c.total_billed)}</td>
+                      <td className="font-semibold text-success">{formatCurrency(c.total_paid || 0)}</td>
+                      <td className="font-semibold">
+                        {c.total_outstanding > 0 ? (
+                          <span className="text-warning">{formatCurrency(c.total_outstanding)}</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>— Cleared</span>
+                        )}
+                      </td>
+                    </>
+                  )}
                   <td onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
                       <button

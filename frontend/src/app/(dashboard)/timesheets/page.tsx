@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useModal } from '@/providers/ModalProvider';
 import { useToast } from '@/hooks/useToast';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight,
@@ -197,6 +198,10 @@ export default function TimesheetsPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formBillable, setFormBillable] = useState(true);
 
+  // Workspace state & sticky project context
+  const { activeProjectId, getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+  const [isInitialized, setIsInitialized] = useState(false);
+
   // Grid toolbar filter states
   const [gridSearch, setGridSearch] = useState('');
   const [gridProjectFilter, setGridProjectFilter] = useState('');
@@ -207,6 +212,70 @@ export default function TimesheetsPage() {
   const [projectFilter, setProjectFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [billableFilter, setBillableFilter] = useState('');
+
+  // Hydrate workspace preferences
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('timesheets', null);
+    if (saved) {
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.gridSearch !== undefined) setGridSearch(saved.gridSearch);
+      if (saved.gridProjectFilter !== undefined) {
+        setGridProjectFilter(saved.gridProjectFilter);
+      } else if (activeProjectId) {
+        setGridProjectFilter(String(activeProjectId));
+      }
+      if (saved.gridMemberFilter !== undefined) setGridMemberFilter(saved.gridMemberFilter);
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.projectFilter !== undefined) {
+        setProjectFilter(saved.projectFilter);
+      } else if (activeProjectId) {
+        setProjectFilter(String(activeProjectId));
+      }
+      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
+      if (saved.billableFilter !== undefined) setBillableFilter(saved.billableFilter);
+      if (saved.showWeekends !== undefined) setShowWeekends(saved.showWeekends);
+    } else if (activeProjectId) {
+      setGridProjectFilter(String(activeProjectId));
+      setProjectFilter(String(activeProjectId));
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference, activeProjectId]);
+
+  // Persist workspace preferences
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('timesheets', {
+      viewMode,
+      gridSearch,
+      gridProjectFilter,
+      gridMemberFilter,
+      searchQuery,
+      projectFilter,
+      statusFilter,
+      billableFilter,
+      showWeekends,
+    });
+  }, [
+    isInitialized,
+    viewMode,
+    gridSearch,
+    gridProjectFilter,
+    gridMemberFilter,
+    searchQuery,
+    projectFilter,
+    statusFilter,
+    billableFilter,
+    showWeekends,
+    setPagePreference,
+  ]);
+
+  // Pre-select sticky project in log time modal
+  useEffect(() => {
+    if (showLogModal && activeProjectId && !formProjectId) {
+      setFormProjectId(String(activeProjectId));
+    }
+  }, [showLogModal, activeProjectId, formProjectId]);
 
   // ============================================================
   // Week calculations

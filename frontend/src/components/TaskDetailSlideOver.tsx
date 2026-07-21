@@ -219,11 +219,12 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
   });
 
   const timerMutation = useMutation({
-    mutationFn: (action: 'start' | 'pause' | 'stop' | 'reset') => {
+    mutationFn: (action: 'start' | 'pause' | 'stop' | 'complete' | 'reset') => {
       const fn = {
         start: tasksApi.startTimer,
         pause: tasksApi.pauseTimer,
         stop: tasksApi.stopTimer,
+        complete: tasksApi.completeTimer,
         reset: tasksApi.resetTimer,
       }[action];
       return fn(taskId!);
@@ -231,9 +232,13 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
     onSuccess: (_res, action) => {
       queryClient.invalidateQueries({ queryKey: ['task', taskId] });
       queryClient.invalidateQueries({ queryKey: ['globalTasks'] });
-      if (action === 'stop') {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      if (action === 'stop' || action === 'complete') {
         queryClient.invalidateQueries({ queryKey: ['taskTimeLogs', taskId] });
         queryClient.invalidateQueries({ queryKey: ['projectTimesheets'] });
+        queryClient.invalidateQueries({ queryKey: ['timesheets'] });
+        queryClient.invalidateQueries({ queryKey: ['project_profitability'] });
       }
     },
   });
@@ -687,7 +692,7 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                 </div>
               </div>
 
-              <div style={{ padding: '0 1rem 1rem', display: 'flex', gap: '0.5rem' }}>
+              <div style={{ padding: '0 1rem 1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {!timerRunning && !timerPaused && (
                   <button
                     onClick={() => timerMutation.mutate('start')}
@@ -708,6 +713,15 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                     <Play size={13} /> Resume
                   </button>
                 )}
+                <button
+                  onClick={() => timerMutation.mutate('complete')}
+                  disabled={timerMutation.isPending}
+                  className="btn btn-sm"
+                  style={{ flex: 1, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 600 }}
+                  title="Stop timer, log timesheet, and mark task completed"
+                >
+                  <CheckCircle2 size={13} /> Complete
+                </button>
                 {(timerRunning || timerPaused) && (
                   <>
                     <button

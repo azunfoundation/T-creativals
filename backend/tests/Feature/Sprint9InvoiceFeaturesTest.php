@@ -25,8 +25,8 @@ class Sprint9InvoiceFeaturesTest extends TestCase
     {
         parent::setUp();
         
-        \Spatie\Permission\Models\Role::create(['name' => 'founder']);
-        \Spatie\Permission\Models\Role::create(['name' => 'client']);
+        \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'founder']);
+        \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'client']);
         
         $this->founder = User::factory()->create();
         $this->founder->assignRole('founder');

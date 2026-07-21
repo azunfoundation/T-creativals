@@ -12,7 +12,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL &&
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1',
-  timeout: 20000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -33,7 +33,11 @@ export function getApiErrorMessage(err: unknown, fallback = 'Something went wron
   if (axios.isAxiosError(err)) {
     // No response at all → network problem or backend not running
     if (!err.response) {
-      if (err.code === 'ECONNABORTED') {
+      if (
+        err.code === 'ECONNABORTED' ||
+        err.code === 'ETIMEDOUT' ||
+        (err.message && err.message.toLowerCase().includes('timeout'))
+      ) {
         return 'The server took too long to respond. Please try again.';
       }
       return 'Cannot reach the server. Please make sure the backend is running, then try again.';
@@ -893,7 +897,7 @@ export const quotes = {
   reject: (id: number, comments?: string) => api.post<Quote>(`/quotes/${id}/reject`, { comments }),
   send: (id: number) => api.post<void>(`/quotes/${id}/send`),
   // Backend route is /quotes/{id}/download-pdf (NOT /pdf — that route was removed as it only returned HTML)
-  downloadPdf: (id: number) => api.get<Blob>(`/quotes/${id}/download-pdf`, { responseType: 'blob' }),
+  downloadPdf: (id: number) => api.get<Blob>(`/quotes/${id}/download-pdf`, { responseType: 'blob', timeout: 90000 }),
 };
 
 // ============================================================
@@ -1065,7 +1069,7 @@ export const invoices = {
   reject: (id: number, notes?: string) => api.post<Invoice>(`/invoices/${id}/reject`, { notes }),
   send: (id: number) => api.post<void>(`/invoices/${id}/send`),
   // Backend route is /invoices/{id}/download-pdf (NOT /pdf — that 404s)
-  downloadPdf: (id: number) => api.get<Blob>(`/invoices/${id}/download-pdf`, { responseType: 'blob' }),
+  downloadPdf: (id: number) => api.get<Blob>(`/invoices/${id}/download-pdf`, { responseType: 'blob', timeout: 90000 }),
   recordPayment: (id: number, data: any) => api.post<Payment>(`/invoices/${id}/payments`, data),
 };
 
@@ -1286,8 +1290,20 @@ export const projects = {
   deleteDocument: (id: number, documentId: number) => api.delete(`/projects/${id}/documents/${documentId}`),
 };
 
+export interface TaskListParams {
+  page?: number;
+  per_page?: number;
+  status?: string;
+  priority?: string;
+  project_id?: number | null;
+  assigned_to?: number | null;
+  department_id?: number | null;
+  search?: string;
+  parent_task_id?: number | null;
+}
+
 export const tasks = {
-  list: (params?: any) => api.get<{ data: Task[]; meta?: PaginationMeta }>('/tasks', { params }),
+  list: (params?: TaskListParams) => api.get<{ data: Task[]; meta?: PaginationMeta }>('/tasks', { params }),
   get: (id: number) => api.get<Task>(`/tasks/${id}`),
   create: (data: any) => api.post<Task>('/tasks', data),
   update: (id: number, data: any) => api.put<Task>(`/tasks/${id}`, data),
@@ -1312,10 +1328,16 @@ export const tasks = {
   startTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/start`),
   pauseTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/pause`),
   stopTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/stop`),
+  completeTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/complete`),
   resetTimer: (id: number) => api.post<Task>(`/tasks/${id}/timer/reset`),
   listAttachments: (id: number) => api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
   addAttachment: (id: number, data: { filename: string; file_path: string; file_size?: number; mime_type?: string }) => api.post<TaskAttachment>(`/tasks/${id}/attachments`, data),
   deleteAttachment: (id: number, attachmentId: number) => api.delete(`/tasks/${id}/attachments/${attachmentId}`),
+};
+
+export const userPreferences = {
+  get: () => api.get<{ data: Record<string, any> }>('/user/preferences'),
+  update: (preferences: Record<string, any>) => api.put<{ message: string; data: Record<string, any> }>('/user/preferences', { preferences }),
 };
 
 export const timesheets = {
@@ -1556,8 +1578,8 @@ export const payroll = {
   approveRun: (id: number, notes?: string) => api.post<{ message: string; payroll_run: PayrollRun }>(`/payroll/runs/${id}/approve`, { notes }),
   costAllocation: (params?: { year?: number; month?: number }) => api.get<ProjectCostAllocation[]>('/payroll/cost-allocation', { params }),
   myHistory: (params?: { per_page?: number }) => api.get<LaravelPaginatedResponse<PayrollRunItem>>('/payroll/my-history', { params }),
-  downloadPayslip: (itemId: number) => api.get<Blob>(`/payroll/items/${itemId}/download-payslip`, { responseType: 'blob' }),
-  exportRun: (runId: number, format: 'csv' | 'pdf') => api.get<Blob>(`/payroll/runs/${runId}/export`, { params: { format }, responseType: 'blob' }),
+  downloadPayslip: (itemId: number) => api.get<Blob>(`/payroll/items/${itemId}/download-payslip`, { responseType: 'blob', timeout: 90000 }),
+  exportRun: (runId: number, format: 'csv' | 'pdf') => api.get<Blob>(`/payroll/runs/${runId}/export`, { params: { format }, responseType: 'blob', timeout: 90000 }),
   deleteRun: (id: number) => api.delete<{ message: string }>(`/payroll/runs/${id}`),
 };
 
@@ -1611,7 +1633,7 @@ export const expenses = {
   submitExpense: (id: number) => api.post<{ message: string; expense: Expense }>(`/expenses/${id}/submit`),
   reimburseExpense: (id: number) => api.post<{ message: string; expense: Expense }>(`/expenses/${id}/reimburse`),
   getExpenseTimeline: (id: number) => api.get<{ data: ExpenseTimelineEntry[] }>(`/expenses/${id}/timeline`),
-  downloadExpensePdf: (id: number) => api.get<Blob>(`/expenses/${id}/download-pdf`, { responseType: 'blob' }),
+  downloadExpensePdf: (id: number) => api.get<Blob>(`/expenses/${id}/download-pdf`, { responseType: 'blob', timeout: 90000 }),
 };
 
 export const expenseCategories = {
@@ -1712,7 +1734,7 @@ export interface PortalInvoice {
 // Portal-specific axios instance that reads client_token from localStorage
 const portalApi = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1',
-  timeout: 20000,
+  timeout: 60000,
   headers: { 'Content-Type': 'application/json' },
 });
 portalApi.interceptors.request.use((config) => {
@@ -2132,7 +2154,7 @@ export const reports = {
   exportCsv: (
     endpoint: 'revenue' | 'pipeline' | 'quotes' | 'profitability' | 'utilisation' | 'expenses' | 'payroll' | 'clients',
     params?: Record<string, any>
-  ) => api.get<Blob>(`/reports/${endpoint}`, { params: { ...params, export: 'csv' }, responseType: 'blob' }),
+  ) => api.get<Blob>(`/reports/${endpoint}`, { params: { ...params, export: 'csv' }, responseType: 'blob', timeout: 90000 }),
 };
 
 // ============================================================
@@ -2233,13 +2255,13 @@ export const auditLogs = {
   list: (params?: AuditLogParams) =>
     api.get<{ data: AuditLog[]; meta: PaginationMeta }>('/audit-logs', { params }),
   exportCsv: (params?: AuditLogParams) =>
-    api.get('/audit-logs', { params: { ...params, export: 'csv' }, responseType: 'blob' }),
+    api.get('/audit-logs', { params: { ...params, export: 'csv' }, responseType: 'blob', timeout: 90000 }),
 };
 
 export const backups = {
   list: () => api.get<BackupFile[]>('/backups'),
-  create: () => api.post<BackupFile>('/backups'),
-  restore: (filename: string) => api.post<void>(`/backups/${filename}/restore`),
+  create: () => api.post<BackupFile>('/backups', {}, { timeout: 120000 }),
+  restore: (filename: string) => api.post<void>(`/backups/${filename}/restore`, {}, { timeout: 120000 }),
   delete: (filename: string) => api.delete<void>(`/backups/${filename}`),
 };
 
@@ -2273,11 +2295,11 @@ export const recoveryApi = {
 
 export const systemReset = {
   resetPlatform: (data: { password?: string; confirmation?: string }) =>
-    api.post('/system/reset', data),
+    api.post('/system/reset', data, { timeout: 120000 }),
   resetModule: (data: { module: string; password?: string }) =>
-    api.post('/system/reset/module', data),
+    api.post('/system/reset/module', data, { timeout: 120000 }),
   factoryReset: (data: { password?: string; confirmation?: string }) =>
-    api.post('/system/factory-reset', data),
+    api.post('/system/factory-reset', data, { timeout: 120000 }),
 };
 
 export type AttendanceStatus = 'present' | 'partial' | 'absent' | 'leave' | 'holiday';
@@ -2725,13 +2747,13 @@ export const aiApi = {
     attachments?: Array<{ filename: string; file_path: string; mime_type: string; file_size: number }>;
     confirmed_action?: string;
     confirmed_params?: any;
-  }) => api.post<AiChatResponse>('/ai/chat', data),
+  }) => api.post<AiChatResponse>('/ai/chat', data, { timeout: 120000 }),
 
   voiceTalk: (content: string, conversationId?: number) =>
     api.post<{ conversation_id: number; response_text: string }>('/ai/voice/talk', {
       content,
       conversation_id: conversationId,
-    }),
+    }, { timeout: 120000 }),
 
   listAutomations: () =>
     api.get<AiAutomation[]>('/ai/automations'),

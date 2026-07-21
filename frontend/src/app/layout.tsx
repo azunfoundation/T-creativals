@@ -7,6 +7,7 @@ import { useState } from 'react';
 import './globals.css';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ModalProvider } from '@/providers/ModalProvider';
+import { WorkspaceProvider } from '@/providers/WorkspaceProvider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -47,9 +48,11 @@ export default function RootLayout({
         >
           <QueryClientProvider client={queryClient}>
             <ToastProvider>
-              <ModalProvider>
-                {children}
-              </ModalProvider>
+              <WorkspaceProvider>
+                <ModalProvider>
+                  {children}
+                </ModalProvider>
+              </WorkspaceProvider>
             </ToastProvider>
           </QueryClientProvider>
         </ThemeProvider>

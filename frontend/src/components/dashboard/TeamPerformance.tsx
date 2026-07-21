@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 
 interface TeamPerformanceProps {
   teamPerformance: any[];
+  canViewFinancial?: boolean;
 }
 
-export default function TeamPerformance({ teamPerformance }: TeamPerformanceProps) {
+export default function TeamPerformance({ teamPerformance, canViewFinancial }: TeamPerformanceProps) {
   const router = useRouter();
 
   if (!teamPerformance) {
@@ -102,12 +103,14 @@ export default function TeamPerformance({ teamPerformance }: TeamPerformanceProp
                 </div>
 
                 {/* Revenue Generated */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, paddingRight: '0.5rem' }}>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Revenue</span>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {formatCurrency(revenueGenerated)}
-                  </span>
-                </div>
+                {canViewFinancial && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, paddingRight: '0.5rem' }}>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Revenue</span>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {formatCurrency(revenueGenerated)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Productivity Score */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 0.8 }}>

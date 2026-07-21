@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\RecoveryController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\UserPreferenceController;
 use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\LeadSourceController;
 use App\Http\Controllers\Api\V1\LeadStageController;
@@ -105,6 +106,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware(['auth:sanctum', 'throttle:api', \App\Http\Middleware\EnsureStaffToken::class])->group(function () {
+
+        Route::get('user/preferences', [UserPreferenceController::class, 'show']);
+        Route::put('user/preferences', [UserPreferenceController::class, 'update']);
 
         /*
         |----------------------------------------------------------------------
@@ -259,6 +263,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('tasks/{task}/timer/start', [TaskController::class, 'startTimer']);
         Route::post('tasks/{task}/timer/pause', [TaskController::class, 'pauseTimer']);
         Route::post('tasks/{task}/timer/stop', [TaskController::class, 'stopTimer']);
+        Route::post('tasks/{task}/timer/complete', [TaskController::class, 'completeTimer']);
         Route::post('tasks/{task}/timer/reset', [TaskController::class, 'resetTimer']);
         Route::get('projects/{project}/tasks', [TaskController::class, 'projectTasks']);
         Route::apiResource('tasks', TaskController::class);

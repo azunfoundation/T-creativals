@@ -14,6 +14,8 @@ import {
   MoreVertical
 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuthStore } from '@/store/auth';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import {
   projects as projectsApi,
   invoices as invoicesApi,
@@ -90,8 +92,14 @@ const getAvatarStyle = (name: string) => {
 };
 
 export default function ProjectsPage() {
+  const { user } = useAuthStore();
+  const canViewFinancials = user?.permissions?.includes('projects.profitability') || user?.permissions?.includes('reports.view_financial');
   const { confirm, prompt } = useModal();
   const queryClient = useQueryClient();
+
+  // Workspace state
+  const { getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Layout states
   const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
@@ -112,6 +120,37 @@ export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [managerFilter, setManagerFilter] = useState('');
+
+  // Hydrate workspace preferences
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('projects', null);
+    if (saved) {
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
+      if (saved.managerFilter !== undefined) setManagerFilter(saved.managerFilter);
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference]);
+
+  // Persist workspace preferences
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('projects', {
+      viewMode,
+      searchQuery,
+      statusFilter,
+      managerFilter,
+    });
+  }, [
+    isInitialized,
+    viewMode,
+    searchQuery,
+    statusFilter,
+    managerFilter,
+    setPagePreference,
+  ]);
 
   // Drag and drop states for Board view
   const [draggedProjectId, setDraggedProjectId] = useState<number | null>(null);
@@ -363,7 +402,7 @@ export default function ProjectsPage() {
     <div style={{ maxWidth: '100%', margin: '0 auto' }}>
       
       {/* ── Metrics Row ── */}
-      <div className="kpi-grid kpi-grid-4" style={{ marginBottom: '1.5rem', gap: '0.75rem' }}>
+      <div className={canViewFinancials ? "kpi-grid kpi-grid-4" : "kpi-grid kpi-grid-3"} style={{ marginBottom: '1.5rem', gap: '0.75rem' }}>
         {/* KPI 1: TOTAL PROJECTS */}
         <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -483,6 +522,7 @@ export default function ProjectsPage() {
         </div>
 
         {/* KPI 4: TOTAL BUDGET */}
+        {canViewFinancials && (
         <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%', position: 'relative' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
@@ -525,6 +565,7 @@ export default function ProjectsPage() {
             <span>from last month</span>
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Action Header ── */}
@@ -689,7 +730,7 @@ export default function ProjectsPage() {
                   <th>Status</th>
                   <th>Progress</th>
                   <th>Timeline</th>
-                  <th>Budget</th>
+                  {canViewFinancials && <th>Budget</th>}
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -757,9 +798,11 @@ export default function ProjectsPage() {
                           <span>End: {formatDate(project.end_date)}</span>
                         </div>
                       </td>
-                      <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                        {formatCurrency(project.budget || 0)}
-                      </td>
+                      {canViewFinancials && (
+                        <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {formatCurrency(project.budget || 0)}
+                        </td>
+                      )}
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}>
@@ -1024,29 +1067,33 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+        {canViewFinancials && (
+          <>
+            <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
 
-        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
-          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
-            <PieChart size={18} />
-          </div>
-          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(totalBudgetVal)}</span>
-            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Total Budget</span>
-          </div>
-        </div>
+            <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+              <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                <PieChart size={18} />
+              </div>
+              <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(totalBudgetVal)}</span>
+                <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Total Budget</span>
+              </div>
+            </div>
 
-        <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
+            <div style={{ width: '1px', background: 'var(--border)', height: '2.5rem', alignSelf: 'center' }} className="hidden md:block" />
 
-        <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
-          <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
-            <TrendingUp size={18} />
-          </div>
-          <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(avgBudgetVal)}</span>
-            <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Avg. Project Budget</span>
-          </div>
-        </div>
+            <div className="dash-focus-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1 1 180px' }}>
+              <div className="dash-focus-icon-wrap" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                <TrendingUp size={18} />
+              </div>
+              <div className="dash-focus-content" style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="dash-focus-value" style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrency(avgBudgetVal)}</span>
+                <span className="dash-focus-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Avg. Project Budget</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Create Project Slide-over Drawer ── */}

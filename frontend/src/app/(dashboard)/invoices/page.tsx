@@ -16,6 +16,7 @@ import {
   Download, Filter, MoreVertical, FileText, TrendingUp, ChevronDown, ArrowRight
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -85,10 +86,46 @@ const INVOICE_STATUSES: Array<{ value: Invoice['status']; label: string }> = [
 export default function InvoicesDashboard() {
   const { confirm, prompt } = useModal();
   const queryClient = useQueryClient();
+
+  // Workspace state & sticky project context
+  const { getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+  const [isInitialized, setIsInitialized] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'invoices' | 'payments'>('invoices');
   const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Hydrate workspace preferences
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('invoices', null);
+    if (saved) {
+      if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference]);
+
+  // Persist workspace preferences
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('invoices', {
+      activeTab,
+      viewMode,
+      searchQuery,
+      statusFilter,
+    });
+  }, [
+    isInitialized,
+    activeTab,
+    viewMode,
+    searchQuery,
+    statusFilter,
+    setPagePreference,
+  ]);
   
   // Record Payment drawer states
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);

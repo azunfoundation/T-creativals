@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useModal } from '@/providers/ModalProvider';
 import { useToast } from '@/hooks/useToast';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, LayoutGrid, List, X, RotateCcw, Tag,
@@ -183,6 +184,10 @@ export default function LeadsPage() {
     }
   }, []);
 
+  // Workspace state
+  const { getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+  const [isInitialized, setIsInitialized] = useState(false);
+
   // Filters state
   const [searchQuery, setSearchQuery] = useState('');
   const [stageFilter, setStageFilter] = useState('');
@@ -199,6 +204,55 @@ export default function LeadsPage() {
   // Sorting state for List view
   const [sortField, setSortField] = useState<string>('company_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Hydrate workspace preferences
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('crm', null);
+    if (saved) {
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.stageFilter !== undefined) setStageFilter(saved.stageFilter);
+      if (saved.sourceFilter !== undefined) setSourceFilter(saved.sourceFilter);
+      if (saved.execFilter !== undefined) setExecFilter(saved.execFilter);
+      if (saved.priorityFilter !== undefined) setPriorityFilter(saved.priorityFilter);
+      if (saved.tempFilter !== undefined) setTempFilter(saved.tempFilter);
+      if (saved.budgetRangeFilter !== undefined) setBudgetRangeFilter(saved.budgetRangeFilter);
+      if (saved.sortField) setSortField(saved.sortField);
+      if (saved.sortOrder) setSortOrder(saved.sortOrder);
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference]);
+
+  // Persist workspace preferences
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('crm', {
+      viewMode,
+      searchQuery,
+      stageFilter,
+      sourceFilter,
+      execFilter,
+      priorityFilter,
+      tempFilter,
+      budgetRangeFilter,
+      sortField,
+      sortOrder,
+    });
+  }, [
+    isInitialized,
+    viewMode,
+    searchQuery,
+    stageFilter,
+    sourceFilter,
+    execFilter,
+    priorityFilter,
+    tempFilter,
+    budgetRangeFilter,
+    sortField,
+    sortOrder,
+    setPagePreference,
+  ]);
 
   // ============================================================
   // Queries

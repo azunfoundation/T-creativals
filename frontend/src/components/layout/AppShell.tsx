@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/auth';
 import { useQuery } from '@tanstack/react-query';
 import { alerts as alertsApi, platformSettings as settingsApi, SystemSettings } from '@/lib/api';
 import AlertsDrawer from './AlertsDrawer';
+import { StickyProjectSwitcher } from './StickyProjectSwitcher';
 
 // -- Navigation Groups ---------------------------------------------
 interface NavItem {
@@ -486,6 +487,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+
+              {/* Sticky Project Switcher */}
+              <StickyProjectSwitcher />
 
               {/* Quick Create */}
               <div ref={quickCreateRef} style={{ position: 'relative' }}>

@@ -255,7 +255,7 @@ export default function DashboardPage() {
       )}
 
       {/* 5. & 6. Attention Required + Financial Overview (2-Column Grid) */}
-      <div className="dash-grid-2">
+      <div className="dash-grid-2" style={{ gridTemplateColumns: canViewFinancial ? 'repeat(2, minmax(0, 1fr))' : '1fr' }}>
         <AttentionRequired attentionData={dashboardData.attention_required || {}} />
         <FinancialOverview trends={trends} canViewFinancial={canViewFinancial} />
       </div>
@@ -272,7 +272,7 @@ export default function DashboardPage() {
           canViewSales={perms.includes('reports.view_sales')}
         />
         
-        <TeamPerformance teamPerformance={dashboardData.team_performance || []} />
+        <TeamPerformance teamPerformance={dashboardData.team_performance || []} canViewFinancial={canViewFinancial} />
       </div>
 
       {/* 10, 11 & 12. Top Clients + Who's In Today + Activity Feed (3-Column Grid) */}

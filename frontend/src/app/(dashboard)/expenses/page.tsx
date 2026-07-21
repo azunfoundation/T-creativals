@@ -26,6 +26,7 @@ import { getApiErrorMessage } from '@/lib/api';
 import { useToast } from '@/hooks/useToast';
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
 
@@ -64,6 +65,10 @@ export default function ExpensesDashboard() {
   const { user } = useAuthStore();
   const { showToast } = useToast();
 
+  // Workspace state & sticky project context
+  const { activeProjectId, getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
+  const [isInitialized, setIsInitialized] = useState(false);
+
   // Active view states
   const [activeTab, setActiveTab] = useState<'list' | 'approvals'>('list');
 
@@ -72,6 +77,46 @@ export default function ExpensesDashboard() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Hydrate workspace preferences
+  useEffect(() => {
+    if (!workspaceLoaded || isInitialized) return;
+    const saved = getPagePreference<any>('expenses', null);
+    if (saved) {
+      if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.filterCategory !== undefined) setFilterCategory(saved.filterCategory);
+      if (saved.filterStatus !== undefined) setFilterStatus(saved.filterStatus);
+      if (saved.filterProject !== undefined) {
+        setFilterProject(saved.filterProject);
+      } else if (activeProjectId) {
+        setFilterProject(String(activeProjectId));
+      }
+      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+    } else if (activeProjectId) {
+      setFilterProject(String(activeProjectId));
+    }
+    setIsInitialized(true);
+  }, [workspaceLoaded, isInitialized, getPagePreference, activeProjectId]);
+
+  // Persist workspace preferences
+  useEffect(() => {
+    if (!isInitialized) return;
+    setPagePreference('expenses', {
+      activeTab,
+      filterCategory,
+      filterStatus,
+      filterProject,
+      searchQuery,
+    });
+  }, [
+    isInitialized,
+    activeTab,
+    filterCategory,
+    filterStatus,
+    filterProject,
+    searchQuery,
+    setPagePreference,
+  ]);
 
   // Drawer / Modals controllers
   const [showDrawer, setShowDrawer] = useState(false);
@@ -102,6 +147,13 @@ export default function ExpensesDashboard() {
   const [formCategory, setFormCategory] = useState('');
   const [formVendor, setFormVendor] = useState('');
   const [formProject, setFormProject] = useState('');
+
+  // Pre-select sticky project in expense creation drawer
+  useEffect(() => {
+    if (showDrawer && activeProjectId && !formProject && !editingExpenseId) {
+      setFormProject(String(activeProjectId));
+    }
+  }, [showDrawer, activeProjectId, formProject, editingExpenseId]);
   const [formAmount, setFormAmount] = useState('');
   const [formTax, setFormTax] = useState('');
   const [formCurrency, setFormCurrency] = useState(''); // resolved to the platform default once currencies load
