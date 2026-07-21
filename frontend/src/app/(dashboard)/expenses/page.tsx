@@ -411,7 +411,7 @@ export default function ExpensesDashboard() {
     setFormDescription('');
     setFormCategory('');
     setFormVendor('');
-    setFormProject('');
+    setFormProject(activeProjectId ? String(activeProjectId) : '');
     setFormAmount('');
     setFormTax('');
     setFormCurrency(defaultCurrencyId ? String(defaultCurrencyId) : '');

@@ -43,8 +43,11 @@ import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton';
 
 import { toArr, KpiCard } from '@/components/dashboard/shared';
 
+import { useWorkspace } from '@/providers/WorkspaceProvider';
+
 export default function DashboardPage() {
   const { user } = useAuthStore();
+  const { activeProjectId } = useWorkspace();
   const router = useRouter();
   const now = new Date();
   const currentMonthName = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -54,10 +57,10 @@ export default function DashboardPage() {
   const canViewTeamAttendance = perms.includes('attendance.view_all');
 
   // ── Queries ──────────────────────────────────────────────────────────────
-  const { data: dashboardData = {}, isLoading, isError, refetch } = useQuery({
-    queryKey: ['dashboard', 'summary'],
+  const { data: dashboardData = {}, isLoading, isFetching, isError, refetch } = useQuery({
+    queryKey: ['dashboard', 'summary', activeProjectId],
     queryFn: async () => {
-      const d = (await reports.getDashboardSummary()).data;
+      const d = (await reports.getDashboardSummary(activeProjectId ? { project_id: activeProjectId } : undefined)).data;
       if (d.financial_trends)                   d.financial_trends = toArr(d.financial_trends);
       if (d.this_month_revenue?.top_clients)     d.this_month_revenue.top_clients = toArr(d.this_month_revenue.top_clients);
       if (d.this_month_expenses?.categories)     d.this_month_expenses.categories = toArr(d.this_month_expenses.categories);
@@ -70,9 +73,9 @@ export default function DashboardPage() {
   });
 
   const briefingQuery = useQuery<DashboardBriefing>({
-    queryKey: ['dashboard', 'briefing'],
+    queryKey: ['dashboard', 'briefing', activeProjectId],
     queryFn: async () => {
-      const res = await reports.getDashboardBriefing();
+      const res = await reports.getDashboardBriefing(activeProjectId ? { project_id: activeProjectId } : undefined);
       return res.data;
     },
     enabled: !!user && canViewFinancial,
@@ -87,7 +90,7 @@ export default function DashboardPage() {
     enabled: !!user && canViewTeamAttendance,
   });
 
-  if (isLoading) {
+  if (isLoading || isFetching) {
     return <DashboardSkeleton />;
   }
 

@@ -628,13 +628,37 @@ class ReportController extends Controller
     public function dashboardOverview(Request $request)
     {
         $user = $request->user();
+        $projectId = $request->filled('project_id') ? (int) $request->input('project_id') : null;
 
-        // Short per-user cache window to absorb reloads/focus refetches.
-        // Key is versioned: the payload shape changed when sections became
-        // permission-gated.
-        $cacheKey = 'dashboard_overview_v2_' . $user->id;
+        // Authorization check if project_id is provided
+        if ($projectId) {
+            $canSeeAllProjects = $user->hasPermissionTo('projects.view_all') || $user->hasPermissionTo('reports.view_financial');
+            if (!$canSeeAllProjects) {
+                if ($user->hasRole('client')) {
+                    $hasAccess = DB::table('projects')->where('id', $projectId)->where('client_id', $user->id)->exists();
+                } else {
+                    $hasAccess = DB::table('projects')
+                        ->where('id', $projectId)
+                        ->where(function ($q) use ($user) {
+                            $q->where('manager_id', $user->id)
+                               ->orWhereExists(function ($mq) use ($user) {
+                                   $mq->select(DB::raw(1))
+                                      ->from('project_members')
+                                      ->whereColumn('project_members.project_id', 'projects.id')
+                                      ->where('project_members.user_id', $user->id);
+                               });
+                        })->exists();
+                }
+                if (!$hasAccess) {
+                    return response()->json(['message' => 'This action is unauthorized.'], 403);
+                }
+            }
+        }
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () use ($user) {
+        // Short per-user & project cache window to absorb reloads/focus refetches.
+        $cacheKey = 'dashboard_overview_v3_' . $user->id . ($projectId ? '_p_' . $projectId : '');
+
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () use ($user, $projectId) {
             $now = Carbon::now();
             $today = $now->toDateString();
 
@@ -658,9 +682,7 @@ class ReportController extends Controller
             $dashboardData = [];
 
             // Employee hourly-rate map — loaded at most once per request, and
-            // only when a section that costs labor actually needs it
-            // (previously re-queried per section AND per project in the
-            // Project Health loop).
+            // only when a section that costs labor actually needs it.
             $userHourlyRates = null;
             $getHourlyRates = function () use (&$userHourlyRates): array {
                 if ($userHourlyRates === null) {
@@ -674,8 +696,11 @@ class ReportController extends Controller
             // Fresh, correctly-scoped Project query per call site: full
             // visibility for projects.view_all / financial reporting holders;
             // own managed/member projects for everyone else with projects.view.
-            $scopedProjectsQuery = function () use ($user, $canViewAllProjects, $canViewFinancial) {
+            $scopedProjectsQuery = function () use ($user, $canViewAllProjects, $canViewFinancial, $projectId) {
                 $q = Project::query();
+                if ($projectId) {
+                    $q->where('id', $projectId);
+                }
                 if (!$canViewAllProjects && !$canViewFinancial) {
                     if ($user->hasRole('client')) {
                         $q->where('client_id', $user->id);
@@ -693,23 +718,25 @@ class ReportController extends Controller
 
             // ── 1. Financial Overview (reports.view_financial only) ─────────
             if ($canViewFinancial) {
-                $dashboardData['this_month_revenue'] = $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo);
-                $dashboardData['last_month_revenue'] = $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo);
-                $dashboardData['this_month_expenses'] = $this->financialService->getExpenseBreakdown($thisMonthFrom, $thisMonthTo);
+                $dashboardData['this_month_revenue'] = $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo, $projectId);
+                $dashboardData['last_month_revenue'] = $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo, $projectId);
+                $dashboardData['this_month_expenses'] = $this->financialService->getExpenseBreakdown($thisMonthFrom, $thisMonthTo, $projectId);
 
                 // Profitability summary — period-overlap filter (same fix as
                 // ReportController::projectProfitability): a project counts for
                 // this month if it was ACTIVE at any point during it, not only
                 // if it happened to start inside the month.
-                $projects = Project::query()
+                $projectsQuery = Project::query()
                     ->where(function ($q) use ($thisMonthTo) {
                         $q->whereNull('start_date')->orWhere('start_date', '<=', $thisMonthTo->toDateString());
                     })
                     ->where(function ($q) use ($thisMonthFrom) {
                         $q->whereNull('end_date')->orWhere('end_date', '>=', $thisMonthFrom->toDateString());
-                    })
-                    ->with('invoice')
-                    ->get();
+                    });
+                if ($projectId) {
+                    $projectsQuery->where('id', $projectId);
+                }
+                $projects = $projectsQuery->with('invoice')->get();
                 $projectIds = $projects->pluck('id')->toArray();
 
                 // Prefetch profitability helper DB values to bypass N+1 inside loop
@@ -765,41 +792,50 @@ class ReportController extends Controller
                     ]
                 ];
 
-                // 6-month historical cash flow trends. Payroll previously
-                // filtered on status = 'paid' — a state no code path ever
-                // reaches (runs only move draft → approved), so the payroll
-                // line was permanently ₹0.
+                // 6-month historical cash flow trends.
                 $historicalTrends = [];
                 for ($i = 5; $i >= 0; $i--) {
                     $monthStart = $now->copy()->subMonths($i)->startOfMonth();
                     $monthEnd = $now->copy()->subMonths($i)->endOfMonth();
 
-                    $invoicedSum = (float) DB::table('invoices')
+                    $invQuery = DB::table('invoices')
                         ->whereNull('deleted_at')
                         ->whereIn('status', array_merge(self::RECEIVABLE_INVOICE_STATUSES, ['paid']))
-                        ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                        ->sum(DB::raw('total_amount * exchange_rate'));
+                        ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+                    if ($projectId) {
+                        $invQuery->where('project_id', $projectId);
+                    }
+                    $invoicedSum = (float) $invQuery->sum(DB::raw('total_amount * exchange_rate'));
 
-                    $collectedSum = (float) DB::table('payments')
+                    $collQuery = DB::table('payments')
                         ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
                         ->whereNull('payments.deleted_at')
                         ->whereNull('invoices.deleted_at')
-                        ->whereBetween('payments.payment_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                        ->sum(DB::raw('payments.amount * invoices.exchange_rate'));
+                        ->whereBetween('payments.payment_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+                    if ($projectId) {
+                        $collQuery->where('invoices.project_id', $projectId);
+                    }
+                    $collectedSum = (float) $collQuery->sum(DB::raw('payments.amount * invoices.exchange_rate'));
 
-                    $expensesSum = (float) DB::table('expenses')
+                    $expQuery = DB::table('expenses')
                         ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
                         ->whereNull('expenses.deleted_at')
                         ->whereIn('expenses.status', ['approved', 'reimbursed'])
-                        ->whereBetween('expenses.expense_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
-                        ->sum(DB::raw('expenses.amount * currencies.exchange_rate_to_inr'));
+                        ->whereBetween('expenses.expense_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+                    if ($projectId) {
+                        $expQuery->where('expenses.project_id', $projectId);
+                    }
+                    $expensesSum = (float) $expQuery->sum(DB::raw('expenses.amount * currencies.exchange_rate_to_inr'));
 
-                    $payrollSum = (float) DB::table('payroll_runs')
-                        ->join('currencies', 'payroll_runs.currency_id', '=', 'currencies.id')
-                        ->whereNull('payroll_runs.deleted_at')
-                        ->whereIn('payroll_runs.status', ['approved', 'processed', 'paid'])
-                        ->whereBetween(DB::raw('coalesce(payroll_runs.processed_at, payroll_runs.created_at)'), [$monthStart->toDateTimeString(), $monthEnd->toDateTimeString()])
-                        ->sum(DB::raw('payroll_runs.total_net * currencies.exchange_rate_to_inr'));
+                    $payrollSum = 0.0;
+                    if (!$projectId) {
+                        $payrollSum = (float) DB::table('payroll_runs')
+                            ->join('currencies', 'payroll_runs.currency_id', '=', 'currencies.id')
+                            ->whereNull('payroll_runs.deleted_at')
+                            ->whereIn('payroll_runs.status', ['approved', 'processed', 'paid'])
+                            ->whereBetween(DB::raw('coalesce(payroll_runs.processed_at, payroll_runs.created_at)'), [$monthStart->toDateTimeString(), $monthEnd->toDateTimeString()])
+                            ->sum(DB::raw('payroll_runs.total_net * currencies.exchange_rate_to_inr'));
+                    }
 
                     $historicalTrends[] = [
                         'month_key' => $monthStart->format('Y-m'),
@@ -817,10 +853,14 @@ class ReportController extends Controller
             // Active clients — clients with a running project. Financial and
             // sales viewers both legitimately need this KPI.
             if ($canViewFinancial || $canViewSales) {
-                $dashboardData['active_clients_count'] = DB::table('projects')
+                $clientsQuery = DB::table('projects')
                     ->whereNull('projects.deleted_at')
                     ->whereIn('projects.status', self::RUNNING_PROJECT_STATUSES)
-                    ->join('users', 'projects.client_id', '=', 'users.id')
+                    ->join('users', 'projects.client_id', '=', 'users.id');
+                if ($projectId) {
+                    $clientsQuery->where('projects.id', $projectId);
+                }
+                $dashboardData['active_clients_count'] = $clientsQuery
                     ->distinct('projects.client_id')
                     ->count('projects.client_id');
             }
@@ -913,7 +953,13 @@ class ReportController extends Controller
             //       scoped to the people who log time on their projects) ─────
             if ($canViewHr || $isPm) {
                 $usersQuery = User::query()->where('status', 'active')->where('is_client_portal_user', false);
-                if (!$canViewHr && $isPm) {
+                if ($projectId) {
+                    $projectMemberUserIds = DB::table('project_members')->where('project_id', $projectId)->pluck('user_id')->toArray();
+                    $projectTimesheetUserIds = DB::table('timesheets')->where('project_id', $projectId)->pluck('user_id')->toArray();
+                    $projectManagerId = DB::table('projects')->where('id', $projectId)->value('manager_id');
+                    $relevantUserIds = array_unique(array_merge($projectMemberUserIds, $projectTimesheetUserIds, $projectManagerId ? [$projectManagerId] : []));
+                    $usersQuery->whereIn('id', $relevantUserIds);
+                } elseif (!$canViewHr && $isPm) {
                     $pmProjectUserIds = DB::table('timesheets')
                         ->join('projects', 'timesheets.project_id', '=', 'projects.id')
                         ->where('projects.manager_id', $user->id)
@@ -924,20 +970,24 @@ class ReportController extends Controller
                 $teamUsers = $usersQuery->with(['departments', 'compensation'])->get();
                 $teamUserIds = $teamUsers->pluck('id')->toArray();
 
-                $timesheetsGrouped = DB::table('timesheets')
+                $tsQuery = DB::table('timesheets')
                     ->whereIn('user_id', $teamUserIds)
                     ->whereIn('status', ['submitted', 'approved'])
                     ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()])
-                    ->whereNull('deleted_at')
-                    ->get()
-                    ->groupBy('user_id');
+                    ->whereNull('deleted_at');
+                if ($projectId) {
+                    $tsQuery->where('project_id', $projectId);
+                }
+                $timesheetsGrouped = $tsQuery->get()->groupBy('user_id');
 
-                $completedTasksGrouped = DB::table('tasks')
+                $taskQuery = DB::table('tasks')
                     ->whereIn('assigned_to', $teamUserIds)
-                    // Task enum has 'done', not 'completed' — the old filter
-                    // made "Tasks Done" permanently zero.
                     ->where('status', 'done')
-                    ->whereNull('deleted_at')
+                    ->whereNull('deleted_at');
+                if ($projectId) {
+                    $taskQuery->where('project_id', $projectId);
+                }
+                $completedTasksGrouped = $taskQuery
                     ->select('assigned_to', DB::raw('count(*) as count'))
                     ->groupBy('assigned_to')
                     ->get()
@@ -1034,9 +1084,7 @@ class ReportController extends Controller
                     })
                     ->values();
 
-                // Project Health — batched (previously this loop ran 3 queries
-                // PER project, including re-loading every user's compensation
-                // each iteration).
+                // Project Health — batched
                 $runningIds = $runningProjects->pluck('id')->toArray();
                 $healthTimesheets = DB::table('timesheets')
                     ->whereIn('project_id', $runningIds)
@@ -1110,40 +1158,57 @@ class ReportController extends Controller
             }
 
             // ── 5. Alerts list (always own records) ─────────────────────────
-            $dashboardData['alerts_list'] = DB::table('alerts')
-                ->where('user_id', $user->id)
+            $alertsQuery = DB::table('alerts')->where('user_id', $user->id);
+            if ($projectId) {
+                $alertsQuery->where(function($aq) use ($projectId) {
+                    $aq->where('project_id', $projectId)->orWhereNull('project_id');
+                });
+            }
+            $dashboardData['alerts_list'] = $alertsQuery
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();
 
             // ── 6. My Day (every user, own records only) ────────────────────
+            $myOpenTasksQuery = DB::table('tasks')
+                ->whereNull('deleted_at')
+                ->where('assigned_to', $user->id)
+                ->whereNotIn('status', ['done', 'cancelled']);
+            if ($projectId) {
+                $myOpenTasksQuery->where('project_id', $projectId);
+            }
+
             $myOverdueTasksQuery = DB::table('tasks')
                 ->whereNull('deleted_at')
                 ->where('assigned_to', $user->id)
                 ->whereNotIn('status', ['done', 'cancelled'])
                 ->where('due_date', '<', $today);
+            if ($projectId) {
+                $myOverdueTasksQuery->where('project_id', $projectId);
+            }
+
+            $myHoursQuery = DB::table('timesheets')
+                ->whereNull('deleted_at')
+                ->where('user_id', $user->id)
+                ->whereIn('status', ['draft', 'submitted', 'approved'])
+                ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()]);
+            if ($projectId) {
+                $myHoursQuery->where('project_id', $projectId);
+            }
+
             $todayAttendance = DB::table('attendance_records')
                 ->where('user_id', $user->id)
                 ->whereDate('date', $today)
                 ->first();
             $dashboardData['my_summary'] = [
-                'open_tasks_count' => DB::table('tasks')
-                    ->whereNull('deleted_at')
-                    ->where('assigned_to', $user->id)
-                    ->whereNotIn('status', ['done', 'cancelled'])
-                    ->count(),
+                'open_tasks_count' => $myOpenTasksQuery->count(),
                 'overdue_tasks_count' => (clone $myOverdueTasksQuery)->count(),
                 'overdue_tasks' => (clone $myOverdueTasksQuery)
                     ->select('id', 'task_number', 'title', 'due_date')
                     ->orderBy('due_date', 'asc')
                     ->limit(5)
                     ->get(),
-                'hours_this_month' => round((float) DB::table('timesheets')
-                    ->whereNull('deleted_at')
-                    ->where('user_id', $user->id)
-                    ->whereIn('status', ['draft', 'submitted', 'approved'])
-                    ->whereBetween('date', [$thisMonthFrom->toDateString(), $thisMonthTo->toDateString()])
-                    ->sum('hours_logged'), 2),
+                'hours_this_month' => round((float) $myHoursQuery->sum('hours_logged'), 2),
                 'attendance_today' => $todayAttendance ? [
                     'status' => $todayAttendance->status,
                     'clocked_in' => $todayAttendance->check_in_at !== null && $todayAttendance->check_out_at === null,
@@ -1157,12 +1222,13 @@ class ReportController extends Controller
             $attention = ['counts' => []];
 
             if ($canViewAllInvoices) {
-                // Columns are table-qualified because the list query below
-                // joins users (which also soft-deletes).
                 $overdueInvoicesQuery = DB::table('invoices')
                     ->whereNull('invoices.deleted_at')
                     ->whereIn('invoices.status', self::RECEIVABLE_INVOICE_STATUSES)
                     ->where('invoices.due_date', '<', $today);
+                if ($projectId) {
+                    $overdueInvoicesQuery->where('invoices.project_id', $projectId);
+                }
                 $attention['counts']['invoices'] = (clone $overdueInvoicesQuery)->count();
                 $attention['counts']['invoices_amount'] = (float) (clone $overdueInvoicesQuery)->sum(DB::raw('invoices.due_amount * invoices.exchange_rate'));
                 $attention['overdue_invoices'] = (clone $overdueInvoicesQuery)
@@ -1173,15 +1239,16 @@ class ReportController extends Controller
                     ->get();
             }
 
-            // Overdue tasks — full visibility for HR/financial/all-projects
-            // holders, a PM's own projects for PMs, own assigned tasks for
-            // everyone else.
+            // Overdue tasks
             $overdueTasksQuery = DB::table('tasks')
                 ->whereNull('tasks.deleted_at')
                 ->whereNotIn('tasks.status', ['done', 'cancelled'])
                 ->where('tasks.due_date', '<', $today);
+            if ($projectId) {
+                $overdueTasksQuery->where('tasks.project_id', $projectId);
+            }
             if ($canViewAllProjects || $canViewFinancial || $canViewHr) {
-                // company-wide
+                // company-wide / project-wide
             } elseif ($isPm) {
                 $overdueTasksQuery
                     ->join('projects', 'tasks.project_id', '=', 'projects.id')
@@ -1263,14 +1330,25 @@ class ReportController extends Controller
     public function dashboardBriefing(Request $request)
     {
         $user = $request->user();
-        // The briefing summarizes company-wide revenue and payroll figures.
+        $projectId = $request->filled('project_id') ? (int) $request->input('project_id') : null;
+
+        // The briefing summarizes revenue and project figures.
         if (!$user->hasPermissionTo('reports.view_financial')) {
             return response()->json(['message' => 'This action is unauthorized.'], 403);
         }
 
-        // Longer cache than the dashboard core (5 min) — this may call an
-        // external model, and headline metrics don't move minute-to-minute.
-        $data = \Illuminate\Support\Facades\Cache::remember('dashboard_briefing_v1', 300, function () {
+        if ($projectId) {
+            $canSeeAllProjects = $user->hasPermissionTo('projects.view_all') || $user->hasPermissionTo('reports.view_financial');
+            if (!$canSeeAllProjects) {
+                $hasAccess = DB::table('projects')->where('id', $projectId)->where('manager_id', $user->id)->exists();
+                if (!$hasAccess) {
+                    return response()->json(['message' => 'This action is unauthorized.'], 403);
+                }
+            }
+        }
+
+        $cacheKey = 'dashboard_briefing_v2_' . $user->id . ($projectId ? '_p_' . $projectId : '');
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($projectId) {
             $now = Carbon::now();
             $today = $now->toDateString();
             $thisMonthFrom = $now->copy()->startOfMonth();
@@ -1279,8 +1357,8 @@ class ReportController extends Controller
             $lastMonthTo = $now->copy()->subMonth()->endOfMonth();
 
             // ── Metrics the briefing summarizes ──────────────────────────────
-            $thisMonthRev = (float) $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo)['summary']['total_invoiced'];
-            $lastMonthRev = (float) $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo)['summary']['total_invoiced'];
+            $thisMonthRev = (float) $this->financialService->getRevenueSummary($thisMonthFrom, $thisMonthTo, $projectId)['summary']['total_invoiced'];
+            $lastMonthRev = (float) $this->financialService->getRevenueSummary($lastMonthFrom, $lastMonthTo, $projectId)['summary']['total_invoiced'];
             $revDiffVal = $lastMonthRev > 0 ? (($thisMonthRev - $lastMonthRev) / $lastMonthRev) * 100 : 0.0;
             $revChangeText = ($revDiffVal >= 0 ? 'increased ' : 'decreased ') . abs(round($revDiffVal, 1)) . '%';
 

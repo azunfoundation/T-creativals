@@ -30,12 +30,12 @@ class FinancialReportService
      * @param Carbon $to
      * @return array
      */
-    public function getRevenueSummary(Carbon $from, Carbon $to): array
+    public function getRevenueSummary(Carbon $from, Carbon $to, ?int $projectId = null): array
     {
         $revenueStatuses = ['approved', 'sent', 'paid', 'partially_paid', 'overdue'];
 
         // ── 1. Top-Level KPIs ────────────────────────────────────────────────
-        $invoiceStats = DB::table('invoices')
+        $invoiceStatsQuery = DB::table('invoices')
             ->select(
                 DB::raw('count(id) as invoice_count'),
                 DB::raw("sum(case when status in ('" . implode("','", $revenueStatuses) . "') then total_amount * exchange_rate else 0 end) as total_invoiced"),
@@ -44,8 +44,13 @@ class FinancialReportService
                 DB::raw('avg(total_amount * exchange_rate) as avg_invoice_value')
             )
             ->whereNull('deleted_at')
-            ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])
-            ->first();
+            ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $invoiceStatsQuery->where('project_id', $projectId);
+        }
+
+        $invoiceStats = $invoiceStatsQuery->first();
 
         $totalInvoiced = (float) ($invoiceStats->total_invoiced ?? 0.0);
         $totalCollected = (float) ($invoiceStats->total_collected ?? 0.0);
@@ -58,20 +63,26 @@ class FinancialReportService
             : 0.00;
 
         // ── 2. Monthly Trend (last 12 months or range months) ──────────────────
-        $trendResults = DB::table('invoices')
+        $trendQuery = DB::table('invoices')
             ->select(
                 DB::raw($this->monthKeyExpression('issue_date') . ' as month_key'),
                 DB::raw("sum(case when status in ('" . implode("','", $revenueStatuses) . "') then total_amount * exchange_rate else 0 end) as invoiced_amount"),
                 DB::raw('sum(paid_amount * exchange_rate) as collected_amount')
             )
             ->whereNull('deleted_at')
-            ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $trendQuery->where('project_id', $projectId);
+        }
+
+        $trendResults = $trendQuery
             ->groupBy('month_key')
             ->orderBy('month_key')
             ->get();
 
         // ── 3. Top Clients by Revenue (Top 5) ──────────────────────────────────
-        $topClients = DB::table('invoices')
+        $topClientsQuery = DB::table('invoices')
             ->join('users', 'invoices.client_id', '=', 'users.id')
             ->select(
                 'users.id as client_id',
@@ -81,7 +92,13 @@ class FinancialReportService
                 DB::raw('sum(invoices.due_amount * invoices.exchange_rate) as outstanding')
             )
             ->whereNull('invoices.deleted_at')
-            ->whereBetween('invoices.issue_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('invoices.issue_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $topClientsQuery->where('invoices.project_id', $projectId);
+        }
+
+        $topClients = $topClientsQuery
             ->groupBy('users.id', 'users.name')
             ->orderBy('total_billed', 'desc')
             ->limit(5)
@@ -112,10 +129,10 @@ class FinancialReportService
      * @param Carbon $to
      * @return array
      */
-    public function getExpenseBreakdown(Carbon $from, Carbon $to): array
+    public function getExpenseBreakdown(Carbon $from, Carbon $to, ?int $projectId = null): array
     {
         // Join with currencies to get exchange_rate_to_inr
-        $expenseStats = DB::table('expenses')
+        $expenseStatsQuery = DB::table('expenses')
             ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
             ->select(
                 DB::raw('count(expenses.id) as expense_count'),
@@ -125,8 +142,13 @@ class FinancialReportService
                 DB::raw("sum(case when expenses.status = 'rejected' then expenses.amount * currencies.exchange_rate_to_inr else 0 end) as total_rejected")
             )
             ->whereNull('expenses.deleted_at')
-            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()])
-            ->first();
+            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $expenseStatsQuery->where('expenses.project_id', $projectId);
+        }
+
+        $expenseStats = $expenseStatsQuery->first();
 
         $totalSubmitted = (float) ($expenseStats->total_submitted ?? 0.0);
         $totalApproved = (float) ($expenseStats->total_approved ?? 0.0);
@@ -135,7 +157,7 @@ class FinancialReportService
         $expenseCount = (int) ($expenseStats->expense_count ?? 0);
 
         // Breakdown by Category
-        $byCategory = DB::table('expenses')
+        $byCategoryQuery = DB::table('expenses')
             ->join('expense_categories', 'expenses.category_id', '=', 'expense_categories.id')
             ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
             ->select(
@@ -145,12 +167,18 @@ class FinancialReportService
                 DB::raw('sum(expenses.amount * currencies.exchange_rate_to_inr) as total_amount')
             )
             ->whereNull('expenses.deleted_at')
-            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $byCategoryQuery->where('expenses.project_id', $projectId);
+        }
+
+        $byCategory = $byCategoryQuery
             ->groupBy('expense_categories.name', 'expense_categories.color')
             ->get();
 
         // Breakdown by Project (Top 10)
-        $byProject = DB::table('expenses')
+        $byProjectQuery = DB::table('expenses')
             ->leftJoin('projects', 'expenses.project_id', '=', 'projects.id')
             ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
             ->select(
@@ -159,14 +187,20 @@ class FinancialReportService
                 DB::raw('sum(expenses.amount * currencies.exchange_rate_to_inr) as total_amount')
             )
             ->whereNull('expenses.deleted_at')
-            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $byProjectQuery->where('expenses.project_id', $projectId);
+        }
+
+        $byProject = $byProjectQuery
             ->groupBy('project_name')
             ->orderBy('total_amount', 'desc')
             ->limit(10)
             ->get();
 
         // Breakdown by Vendor (Top 5)
-        $byVendor = DB::table('expenses')
+        $byVendorQuery = DB::table('expenses')
             ->join('vendors', 'expenses.vendor_id', '=', 'vendors.id')
             ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
             ->select(
@@ -175,14 +209,20 @@ class FinancialReportService
                 DB::raw('sum(expenses.amount * currencies.exchange_rate_to_inr) as total_amount')
             )
             ->whereNull('expenses.deleted_at')
-            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $byVendorQuery->where('expenses.project_id', $projectId);
+        }
+
+        $byVendor = $byVendorQuery
             ->groupBy('vendors.name')
             ->orderBy('total_amount', 'desc')
             ->limit(5)
             ->get();
 
         // Monthly Trend
-        $trend = DB::table('expenses')
+        $trendQuery = DB::table('expenses')
             ->join('currencies', 'expenses.currency_id', '=', 'currencies.id')
             ->select(
                 DB::raw($this->monthKeyExpression('expenses.expense_date') . ' as month_key'),
@@ -190,7 +230,13 @@ class FinancialReportService
                 DB::raw('sum(expenses.amount * currencies.exchange_rate_to_inr) as submitted_amount')
             )
             ->whereNull('expenses.deleted_at')
-            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('expenses.expense_date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($projectId) {
+            $trendQuery->where('expenses.project_id', $projectId);
+        }
+
+        $trend = $trendQuery
             ->groupBy('month_key')
             ->orderBy('month_key')
             ->get();

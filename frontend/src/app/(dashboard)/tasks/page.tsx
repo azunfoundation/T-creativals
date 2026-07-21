@@ -302,6 +302,13 @@ export default function TasksPage() {
   const [createTagInput, setCreateTagInput] = useState('');
   const [createError, setCreateError] = useState('');
 
+  // Preselect active project context in Create Task form
+  useEffect(() => {
+    if (showCreateModal && activeProjectId && !createProjectId) {
+      setCreateProjectId(String(activeProjectId));
+    }
+  }, [showCreateModal, activeProjectId, createProjectId]);
+
   // ============================================================
   // Queries
   // ============================================================
@@ -430,7 +437,7 @@ export default function TasksPage() {
 
   const resetCreateForm = () => {
     setCreateTitle('');
-    setCreateProjectId('');
+    setCreateProjectId(activeProjectId ? String(activeProjectId) : '');
     setCreateDescription('');
     setCreatePriority('medium');
     setCreateAssigneeId('');

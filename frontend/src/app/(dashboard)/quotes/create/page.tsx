@@ -14,6 +14,7 @@ import {
   coupons as couponsApi,
   platformSettings,
   clientsApi,
+  projects as projectsApi,
   getApiErrorMessage
 } from '@/lib/api';
 import type { Lead, Service, Quote, QuoteItem } from '@/lib/api';
@@ -21,6 +22,7 @@ import { Plus, Trash2, ArrowLeft, Percent, Tag, Check, X, ShieldAlert, Sparkles 
 import { formatCurrency } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 
 const QUOTES_CREATE_HOWTO = {
   overview: 'This builder creates a priced proposal (quote) for a lead or client. Add one line per service, set quantities, discounts, and GST, and the totals on the right update automatically. Saving stores the quote as a Draft — nothing is sent to the client from this page.',
@@ -80,6 +82,7 @@ function QuoteBuilderForm() {
   const searchParams = useSearchParams();
   const editId = searchParams.get('id');
   const leadParamId = searchParams.get('lead_id');
+  const { activeProjectId } = useWorkspace();
 
   const isEdit = !!editId;
 
@@ -87,6 +90,19 @@ function QuoteBuilderForm() {
   const [title, setTitle] = useState('');
   const [leadId, setLeadId] = useState<number | ''>('');
   const [clientId, setClientId] = useState<number | ''>('');
+
+  // Prefill client from active project context
+  useEffect(() => {
+    if (activeProjectId && !clientId) {
+      projectsApi.get(activeProjectId).then((res) => {
+        const raw: any = res.data;
+        const p = raw?.data || raw;
+        if (p && p.client_id) {
+          setClientId(Number(p.client_id));
+        }
+      }).catch(() => {});
+    }
+  }, [activeProjectId, clientId]);
   const [currency, setCurrency] = useState('INR');
   const [validUntil, setValidUntil] = useState('');
   const [terms, setTerms] = useState(

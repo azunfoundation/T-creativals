@@ -2114,13 +2114,13 @@ export interface DashboardBriefing {
 }
 
 export const reports = {
-  getDashboardSummary: () =>
-    api.get<any>('/reports/dashboard'),
+  getDashboardSummary: (params?: { project_id?: number | null }) =>
+    api.get<any>('/reports/dashboard', { params }),
 
   // Separate endpoint so the dashboard's core data never waits on an external
   // AI call. Requires reports.view_financial (403 otherwise).
-  getDashboardBriefing: () =>
-    api.get<DashboardBriefing>('/reports/dashboard/briefing'),
+  getDashboardBriefing: (params?: { project_id?: number | null }) =>
+    api.get<DashboardBriefing>('/reports/dashboard/briefing', { params }),
 
   getRevenue: (params?: ReportParams) =>
     api.get<RevenueReportData>('/reports/revenue', { params }),

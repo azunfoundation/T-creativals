@@ -511,7 +511,7 @@ export default function TimesheetsPage() {
 
   const resetForm = () => {
     setFormDate(formatLocalDateStr(new Date()));
-    setFormProjectId('');
+    setFormProjectId(activeProjectId ? String(activeProjectId) : '');
     setFormTaskId('');
     setFormHours('');
     setFormDescription('');

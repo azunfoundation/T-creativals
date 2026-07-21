@@ -12,6 +12,7 @@ import {
   quotes as quotesApi,
   services as servicesApi,
   leads as leadsApi,
+  projects as projectsApi,
   clientsApi,
   platformSettings,
   getApiErrorMessage
@@ -21,6 +22,7 @@ import { Plus, Trash2, ArrowLeft, Percent, Check, X, ShieldAlert, FileText, Cale
 import { formatCurrency } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useWorkspace } from '@/providers/WorkspaceProvider';
 
 const INVOICES_CREATE_HOWTO = {
   overview: 'This form builds a new client invoice. You pick the client, add line items (what you are billing for), and the totals — discounts and GST included — are calculated for you as you type.',
@@ -75,11 +77,25 @@ function InvoiceBuilderForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const quoteParamId = searchParams.get('quoteId') || searchParams.get('quote_id');
+  const { activeProjectId } = useWorkspace();
 
   // Form Field States
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [clientId, setClientId] = useState<number | ''>('');
+
+  // Prefill client from active project context
+  useEffect(() => {
+    if (activeProjectId && !clientId) {
+      projectsApi.get(activeProjectId).then((res) => {
+        const raw: any = res.data;
+        const p = raw?.data || raw;
+        if (p && p.client_id) {
+          setClientId(Number(p.client_id));
+        }
+      }).catch(() => {});
+    }
+  }, [activeProjectId, clientId]);
   const [quoteId, setQuoteId] = useState<number | ''>('');
   const [leadId, setLeadId] = useState<number | ''>('');
   const [currency, setCurrency] = useState('INR');
