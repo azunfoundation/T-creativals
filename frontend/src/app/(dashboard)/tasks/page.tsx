@@ -160,6 +160,9 @@ export default function TasksPage() {
   const isManagerOrLead = !!user?.roles?.some((r) => ['project_manager', 'team_lead'].includes(r.name));
   const canViewAll = isExecutive || !!user?.permissions?.includes('tasks.view_all') || isManagerOrLead || isDepartmentHead;
   const canViewDepartment = isDepartmentHead || isExecutive;
+  const canCreate = user?.permissions?.includes('tasks.create') ?? false;
+  const canEdit   = user?.permissions?.includes('tasks.edit')   ?? false;
+  const canDelete = user?.permissions?.includes('tasks.delete') ?? false;
 
   // Workspace State & Sticky Project Context
   const { activeProjectId, getPagePreference, setPagePreference, isLoaded: workspaceLoaded } = useWorkspace();
@@ -185,17 +188,17 @@ export default function TasksPage() {
         setViewMode(saved.viewMode);
       }
       if (saved.activeScope) setActiveScope(saved.activeScope);
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
-      if (saved.projectFilter !== undefined) {
-        setProjectFilter(saved.projectFilter);
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
+      if (saved.projectFilter != null) {
+        setProjectFilter(String(saved.projectFilter));
       } else if (activeProjectId) {
         setProjectFilter(String(activeProjectId));
       }
-      if (saved.priorityFilter !== undefined) setPriorityFilter(saved.priorityFilter);
-      if (saved.assigneeFilter !== undefined) setAssigneeFilter(saved.assigneeFilter);
-      if (saved.departmentFilter !== undefined) setDepartmentFilter(saved.departmentFilter);
-      if (saved.dueDateFilter !== undefined) setDueDateFilter(saved.dueDateFilter);
-      if (saved.tagFilter !== undefined) setTagFilter(saved.tagFilter);
+      if (saved.priorityFilter != null) setPriorityFilter(String(saved.priorityFilter));
+      if (saved.assigneeFilter != null) setAssigneeFilter(String(saved.assigneeFilter));
+      if (saved.departmentFilter != null) setDepartmentFilter(String(saved.departmentFilter));
+      if (saved.dueDateFilter != null) setDueDateFilter(String(saved.dueDateFilter));
+      if (saved.tagFilter != null) setTagFilter(String(saved.tagFilter));
     } else {
       // Role-aware default initialization
       if (isExecutive) {
@@ -770,7 +773,7 @@ export default function TasksPage() {
               <input
                 type="text"
                 placeholder="Search tasks by title, keyword..."
-                value={searchQuery}
+                value={searchQuery ?? ''}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input"
                 style={{ paddingLeft: '2.25rem', height: '38px', fontSize: '0.875rem', width: '100%' }}
@@ -778,7 +781,7 @@ export default function TasksPage() {
             </div>
 
             <select
-              value={projectFilter}
+              value={projectFilter ?? ''}
               onChange={(e) => setProjectFilter(e.target.value)}
               className="form-input"
               style={{ minWidth: '150px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -790,7 +793,7 @@ export default function TasksPage() {
             </select>
 
             <select
-              value={priorityFilter}
+              value={priorityFilter ?? ''}
               onChange={(e) => setPriorityFilter(e.target.value)}
               className="form-input"
               style={{ width: '130px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -803,7 +806,7 @@ export default function TasksPage() {
             </select>
 
             <select
-              value={assigneeFilter}
+              value={assigneeFilter ?? ''}
               onChange={(e) => handleAssigneeChange(e.target.value)}
               className="form-input"
               style={{ width: '160px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -819,7 +822,7 @@ export default function TasksPage() {
 
             {departments.length > 0 && (
               <select
-                value={departmentFilter}
+                value={departmentFilter ?? ''}
                 onChange={(e) => handleDepartmentChange(e.target.value)}
                 className="form-input"
                 style={{ minWidth: '150px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -867,7 +870,7 @@ export default function TasksPage() {
           {showMoreFilters && (
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <select
-                value={dueDateFilter}
+                value={dueDateFilter ?? ''}
                 onChange={(e) => setDueDateFilter(e.target.value)}
                 className="form-input"
                 style={{ width: '160px', height: '36px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -879,7 +882,7 @@ export default function TasksPage() {
               </select>
 
               <select
-                value={tagFilter}
+                value={tagFilter ?? ''}
                 onChange={(e) => setTagFilter(e.target.value)}
                 className="form-input"
                 style={{ width: '160px', height: '36px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -1012,32 +1015,34 @@ export default function TasksPage() {
                         </div>
                       ))}
 
-                      {colTasks.length === 0 && getColumnEmptyState(col.id, col.label, col.color, () => setShowCreateModal(true))}
+                      {colTasks.length === 0 && getColumnEmptyState(col.id, col.label, col.color, canCreate ? () => setShowCreateModal(true) : undefined)}
                     </div>
 
                     {/* Column Footer: quick add */}
-                    <button
-                      onClick={() => setShowCreateModal(true)}
-                      className="crm-col-add"
-                      style={{
-                        margin: '0 0.625rem 0.625rem',
-                        padding: '0.4rem',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px dashed var(--border)',
-                        background: 'transparent',
-                        color: col.color,
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                        flexShrink: 0
-                      }}
-                    >
-                      <Plus size={13} /> Add Task
-                    </button>
+                    {canCreate && (
+                      <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="crm-col-add"
+                        style={{
+                          margin: '0 0.625rem 0.625rem',
+                          padding: '0.4rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px dashed var(--border)',
+                          background: 'transparent',
+                          color: col.color,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                          flexShrink: 0
+                        }}
+                      >
+                        <Plus size={13} /> Add Task
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -1050,7 +1055,7 @@ export default function TasksPage() {
                   description={taskList.length === 0
                     ? "Click \"Add Task\" to create your first task."
                     : 'Adjust your filters to see more results.'}
-                  action={taskList.length === 0 ? (
+                  action={taskList.length === 0 && canCreate ? (
                     <button onClick={() => setShowCreateModal(true)} className="btn btn-primary btn-sm">
                       <Plus size={14} /> Add Task
                     </button>
@@ -1255,7 +1260,7 @@ export default function TasksPage() {
                   type="text"
                   required
                   placeholder="What needs to be completed?"
-                  value={createTitle}
+                  value={createTitle ?? ''}
                   onChange={(e) => setCreateTitle(e.target.value)}
                   className="form-input"
                 />
@@ -1266,7 +1271,7 @@ export default function TasksPage() {
                   <label className="form-label">Select Project *</label>
                   <select
                     required
-                    value={createProjectId}
+                    value={createProjectId ?? ''}
                     onChange={(e) => setCreateProjectId(e.target.value)}
                     className="form-input"
                     style={{ height: '38px', padding: '0 0.5rem', fontSize: '0.875rem' }}
@@ -1283,7 +1288,7 @@ export default function TasksPage() {
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: PRIORITY_META[createPriority].color, pointerEvents: 'none' }} />
                     <select
-                      value={createPriority}
+                      value={createPriority ?? 'medium'}
                       onChange={(e) => setCreatePriority(e.target.value as any)}
                       className="form-input"
                       style={{ height: '38px', padding: '0 0.5rem 0 1.625rem', fontSize: '0.875rem', width: '100%' }}
@@ -1301,7 +1306,7 @@ export default function TasksPage() {
                 <label className="form-label">Description</label>
                 <textarea
                   placeholder="Task details and scope..."
-                  value={createDescription}
+                  value={createDescription ?? ''}
                   onChange={(e) => setCreateDescription(e.target.value)}
                   className="form-input"
                   style={{ minHeight: '80px', resize: 'vertical' }}
@@ -1314,7 +1319,7 @@ export default function TasksPage() {
                   <div style={{ position: 'relative' }}>
                     <User size={14} style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                     <select
-                      value={createAssigneeId}
+                      value={createAssigneeId ?? ''}
                       onChange={(e) => setCreateAssigneeId(e.target.value)}
                       className="form-input"
                       style={{ height: '38px', padding: '0 0.5rem 0 1.875rem', fontSize: '0.875rem', width: '100%' }}
@@ -1331,7 +1336,7 @@ export default function TasksPage() {
                   <label className="form-label">Due Date</label>
                   <input
                     type="date"
-                    value={createDueDate}
+                    value={createDueDate ?? ''}
                     onChange={(e) => setCreateDueDate(e.target.value)}
                     className="form-input"
                     style={{ height: '38px' }}
@@ -1347,7 +1352,7 @@ export default function TasksPage() {
                       min="0"
                       step="0.25"
                       placeholder="e.g. 15"
-                      value={createEstimate}
+                      value={createEstimate ?? ''}
                       onChange={(e) => setCreateEstimate(e.target.value)}
                       className="form-input"
                       style={{ height: '38px', paddingLeft: '1.875rem', width: '100%' }}
@@ -1403,7 +1408,7 @@ export default function TasksPage() {
                           min="0"
                           step="0.25"
                           placeholder="e.g. 10.00"
-                          value={createEstimate}
+                          value={createEstimate ?? ''}
                           onChange={(e) => setCreateEstimate(e.target.value)}
                           className="form-input"
                           style={{ height: '38px', paddingLeft: '1.875rem', paddingRight: '2.5rem', width: '100%' }}
@@ -1434,7 +1439,7 @@ export default function TasksPage() {
                     </span>
                   ))}
                   <input
-                    value={createTagInput}
+                    value={createTagInput ?? ''}
                     onChange={(e) => setCreateTagInput(e.target.value)}
                     onKeyDown={handleTagKeyDown}
                     onBlur={() => addCreateTag()}
@@ -1520,7 +1525,7 @@ export default function TasksPage() {
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
-                  value={newCategoryInput}
+                  value={newCategoryInput ?? ''}
                   onChange={(e) => setNewCategoryInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }}
                   placeholder="e.g. Design, Bug Fix, Client Request..."
@@ -1634,15 +1639,21 @@ function getColumnEmptyState(colId: string, colLabel: string, colColor: string, 
       <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
         {text}
       </div>
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        Drag tasks here or{' '}
-        <button
-          onClick={onAddClick}
-          style={{ color: colColor, fontWeight: 600 }}
-        >
-          + Add new task
-        </button>
-      </div>
+      {onAddClick ? (
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Drag tasks here or{' '}
+          <button
+            onClick={onAddClick}
+            style={{ color: colColor, fontWeight: 600 }}
+          >
+            + Add new task
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Drag tasks here
+        </div>
+      )}
     </div>
   );
 }

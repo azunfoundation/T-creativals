@@ -1,10 +1,26 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
+
+const ROUTE_PERMISSIONS: Record<string, string[]> = {
+  '/crm':         ['leads.view'],
+  '/clients':     ['clients.view'],
+  '/quotes':      ['quotes.view'],
+  '/invoices':    ['invoices.view'],
+  '/projects':    ['projects.view'],
+  '/expenses':    ['expenses.view'],
+  '/payroll':     ['payroll.view'],
+  '/reports':     ['reports.view'],
+  '/users':       ['users.view'],
+  '/roles':       ['roles.view'],
+  '/departments': ['departments.view'],
+  '/services':    ['services.view'],
+};
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isLoading, loadUser } = useAuthStore();
   const user = useAuthStore((s) => s.user);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -36,6 +52,24 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
     initAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — only run on mount
+
+  // Check route-level permissions
+  useEffect(() => {
+    if (!isInitialized || !user) return;
+
+    const matchedPrefix = Object.keys(ROUTE_PERMISSIONS).find(
+      (prefix) => pathname === prefix || pathname.startsWith(prefix + '/')
+    );
+    if (matchedPrefix) {
+      const required = ROUTE_PERMISSIONS[matchedPrefix];
+      const hasPerm =
+        user.roles?.some((r) => r.name === 'founder') ||
+        required.some((p) => user.permissions?.includes(p));
+      if (!hasPerm) {
+        router.replace('/dashboard');
+      }
+    }
+  }, [pathname, isInitialized, user, router]);
 
   if (isLoading || (!isInitialized && !user)) {
     return (

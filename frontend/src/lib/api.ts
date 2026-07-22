@@ -1341,14 +1341,15 @@ export const userPreferences = {
 };
 
 export const timesheets = {
-  // /timesheets never paginates (backend uses ->get(), not ->paginate()), so the response
-  // interceptor always unwraps it to a flat array — unlike /projects or /tasks, which stay
-  // wrapped in {data, meta}. Callers should read `res.data` directly, not `res.data.data`.
   list: async (params?: any) => {
-    const res = await api.get<Timesheet[]>('/timesheets', { params });
+    const res = await api.get<any>('/timesheets', { params });
+    let list: any[] = [];
     if (Array.isArray(res.data)) {
-      res.data = res.data.map(mapTimesheetBackendToFrontend);
+      list = res.data;
+    } else if (res.data && Array.isArray(res.data.data)) {
+      list = res.data.data;
     }
+    res.data = list.map(mapTimesheetBackendToFrontend);
     return res;
   },
   create: async (data: any) => {

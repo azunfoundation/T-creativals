@@ -13,6 +13,7 @@ import { getInitials } from '@/lib/utils';
 import UserFormModal from './components/UserFormModal';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useAuthStore } from '@/store/auth';
 
 const USERS_HOWTO = {
   overview: 'Every person who signs in to Creativals OS — employees, managers, and clients — has a user account listed here. Each account has roles (what they are allowed to do) and departments (which team they belong to).',
@@ -99,6 +100,10 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' }) {
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { user } = useAuthStore();
+  const canCreate = user?.permissions?.includes('users.create') ?? false;
+  const canEdit = user?.permissions?.includes('users.edit') ?? false;
+  const canDelete = user?.permissions?.includes('users.delete') ?? false;
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -196,13 +201,15 @@ export default function UsersPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <HowToUseGuide moduleKey="users" title="How User Management Works" content={USERS_HOWTO} />
-          <button
-            id="invite-user-btn"
-            onClick={() => { setEditUser(null); setModalOpen(true); }}
-            className="btn btn-primary"
-          >
-            <Plus size={16} /> Invite User
-          </button>
+          {canCreate && (
+            <button
+              id="invite-user-btn"
+              onClick={() => { setEditUser(null); setModalOpen(true); }}
+              className="btn btn-primary"
+            >
+              <Plus size={16} /> Invite User
+            </button>
+          )}
         </div>
       </div>
 
@@ -362,23 +369,27 @@ export default function UsersPage() {
                       >
                         <ExternalLink size={14} />
                       </Link>
-                      <button
-                        id={`edit-user-${user.id}`}
-                        onClick={() => handleEdit(user)}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        title="Edit user"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        id={`delete-user-${user.id}`}
-                        onClick={() => setDeleteConfirm(user.id)}
-                        className="btn btn-danger btn-sm btn-icon"
-                        title="Delete user"
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canEdit && (
+                        <button
+                          id={`edit-user-${user.id}`}
+                          onClick={() => handleEdit(user)}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Edit user"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          id={`delete-user-${user.id}`}
+                          onClick={() => setDeleteConfirm(user.id)}
+                          className="btn btn-danger btn-sm btn-icon"
+                          title="Delete user"
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

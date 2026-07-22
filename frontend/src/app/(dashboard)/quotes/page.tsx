@@ -554,9 +554,11 @@ export default function QuotesPage() {
   const { showToast } = useToast();
   const { confirm, prompt } = useModal();
   const { user } = useAuthStore();
-
-  const userRoles = user?.roles.map((r: any) => typeof r === 'string' ? r : r?.name || '') || [];
-  const isApprover = userRoles.includes('founder') || userRoles.includes('director') || userRoles.includes('sales_head');
+  const canCreate = user?.permissions?.includes('quotes.create') ?? false;
+  const canEdit = user?.permissions?.includes('quotes.edit') ?? false;
+  const canDelete = user?.permissions?.includes('quotes.delete') ?? false;
+  const canApprove = user?.permissions?.includes('quotes.approve') ?? false;
+  const isApprover = canApprove || user?.roles?.some((r: any) => (typeof r === 'string' ? r : r?.name || '') === 'founder');
 
   // Submit Approval Mutation
   const submitApprovalMutation = useMutation({
@@ -816,9 +818,11 @@ export default function QuotesPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <HowToUseGuide moduleKey="quotes" title="How Quotes Work" content={QUOTES_HOWTO} />
-          <Link href="/quotes/create" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--accent)' }}>
-            <Plus size={16} /> Create Quote
-          </Link>
+          {canCreate && (
+            <Link href="/quotes/create" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--accent)' }}>
+              <Plus size={16} /> Create Quote
+            </Link>
+          )}
         </div>
       </div>
 
@@ -1151,7 +1155,7 @@ export default function QuotesPage() {
                                       </Link>
 
                                       {/* Edit Quote Link (if draft/rejected) */}
-                                      {(quote.status === 'draft' || quote.status === 'rejected') && (
+                                      {canEdit && (quote.status === 'draft' || quote.status === 'rejected') && (
                                         <Link
                                           href={`/quotes/create?id=${quote.id}`}
                                           onClick={() => setActiveQuoteMenuId(null)}
@@ -1303,7 +1307,7 @@ export default function QuotesPage() {
                                       </button>
 
                                       {/* Delete (if draft/rejected) */}
-                                      {(quote.status === 'draft' || quote.status === 'rejected') && (
+                                      {canDelete && (quote.status === 'draft' || quote.status === 'rejected') && (
                                         <button
                                           onClick={async () => {
                                             if (await confirm({

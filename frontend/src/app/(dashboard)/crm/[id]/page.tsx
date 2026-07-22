@@ -910,7 +910,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 <HelpIcon text="Changing this moves the lead's card on the CRM Kanban board and logs a stage-change entry in the timeline." />
               </label>
               <select
-                value={lead.stage_id}
+                value={lead?.stage_id ?? ''}
                 onChange={(e) => {
                   const targetStageId = parseInt(e.target.value, 10);
                   const stageName = stages.find(s => s.id === targetStageId)?.name || 'Unknown';

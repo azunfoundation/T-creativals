@@ -63,6 +63,11 @@ export default function ExpensesDashboard() {
   const { confirm, prompt } = useModal();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const canCreate = user?.permissions?.includes('expenses.create') ?? false;
+  const canEdit = user?.permissions?.includes('expenses.edit') ?? false;
+  const canApprove = user?.permissions?.includes('expenses.approve') ?? false;
+  const canDelete = user?.permissions?.includes('expenses.delete') ?? false;
+  const isApprover = canApprove || user?.roles?.some((r: any) => ['founder', 'director', 'project_manager'].includes(typeof r === 'string' ? r : r?.name || ''));
   const { showToast } = useToast();
 
   // Workspace state & sticky project context
@@ -84,14 +89,14 @@ export default function ExpensesDashboard() {
     const saved = getPagePreference<any>('expenses', null);
     if (saved) {
       if (saved.activeTab) setActiveTab(saved.activeTab);
-      if (saved.filterCategory !== undefined) setFilterCategory(saved.filterCategory);
-      if (saved.filterStatus !== undefined) setFilterStatus(saved.filterStatus);
-      if (saved.filterProject !== undefined) {
-        setFilterProject(saved.filterProject);
+      if (saved.filterCategory != null) setFilterCategory(String(saved.filterCategory));
+      if (saved.filterStatus != null) setFilterStatus(String(saved.filterStatus));
+      if (saved.filterProject != null) {
+        setFilterProject(String(saved.filterProject));
       } else if (activeProjectId) {
         setFilterProject(String(activeProjectId));
       }
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
     } else if (activeProjectId) {
       setFilterProject(String(activeProjectId));
     }
@@ -600,12 +605,14 @@ export default function ExpensesDashboard() {
             <Building2 size={16} /> Manage Vendors
           </button>
 
-          <button
-            onClick={handleLogExpenseClick}
-            className="btn btn-primary"
-          >
-            <Plus size={16} /> Log Expense
-          </button>
+          {canCreate && (
+            <button
+              onClick={handleLogExpenseClick}
+              className="btn btn-primary"
+            >
+              <Plus size={16} /> Log Expense
+            </button>
+          )}
         </div>
       </div>
 
@@ -664,20 +671,22 @@ export default function ExpensesDashboard() {
           Expense Registry ({filteredExpenses.length})
         </button>
         
-        <button
-          onClick={() => setActiveTab('approvals')}
-          style={{
-            padding: '0.625rem 0',
-            borderBottom: activeTab === 'approvals' ? '2px solid var(--accent)' : '2px solid transparent',
-            color: activeTab === 'approvals' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'approvals' ? 600 : 500,
-            fontSize: '0.875rem'
-          }}
-          className="flex items-center gap-2"
-        >
-          <CheckCircle2 size={15} />
-          Approvals Desk ({pendingApprovals.length})
-        </button>
+        {isApprover && (
+          <button
+            onClick={() => setActiveTab('approvals')}
+            style={{
+              padding: '0.625rem 0',
+              borderBottom: activeTab === 'approvals' ? '2px solid var(--accent)' : '2px solid transparent',
+              color: activeTab === 'approvals' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'approvals' ? 600 : 500,
+              fontSize: '0.875rem'
+            }}
+            className="flex items-center gap-2"
+          >
+            <CheckCircle2 size={15} />
+            Approvals Desk ({pendingApprovals.length})
+          </button>
+        )}
       </div>
 
       {/* ── Tab Layout Container ── */}
@@ -696,7 +705,7 @@ export default function ExpensesDashboard() {
                 <input
                   type="text"
                   placeholder="Search expense title, number, vendor, submitter..."
-                  value={searchQuery}
+                  value={searchQuery ?? ''}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="form-input"
                   style={{ paddingLeft: '2.25rem', height: '36px', fontSize: '0.8125rem' }}
@@ -706,7 +715,7 @@ export default function ExpensesDashboard() {
               <Filter size={14} style={{ color: 'var(--text-muted)' }} />
 
               <select
-                value={filterCategory}
+                value={filterCategory ?? ''}
                 onChange={(e) => setFilterCategory(e.target.value)}
                 className="form-input"
                 style={{ width: '150px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
@@ -718,7 +727,7 @@ export default function ExpensesDashboard() {
               </select>
 
               <select
-                value={filterStatus}
+                value={filterStatus ?? ''}
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="form-input"
                 style={{ width: '130px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
@@ -732,7 +741,7 @@ export default function ExpensesDashboard() {
               </select>
 
               <select
-                value={filterProject}
+                value={filterProject ?? ''}
                 onChange={(e) => setFilterProject(e.target.value)}
                 className="form-input"
                 style={{ width: '160px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
@@ -768,7 +777,7 @@ export default function ExpensesDashboard() {
                 <EmptyState
                   title="No expenses logged yet"
                   description="Log your first business expense to start tracking spend and reimbursements."
-                  action={<button onClick={handleLogExpenseClick} className="btn btn-primary btn-sm"><Plus size={14} /> Log Expense</button>}
+                  action={canCreate ? <button onClick={handleLogExpenseClick} className="btn btn-primary btn-sm"><Plus size={14} /> Log Expense</button> : undefined}
                 />
               ) : (
                 <EmptyState
@@ -865,22 +874,26 @@ export default function ExpensesDashboard() {
                                 >
                                   Submit
                                 </button>
-                                <button
-                                  onClick={() => handleEditExpense(e)}
-                                  style={{ color: 'var(--text-secondary)' }}
-                                  className="hover:text-primary p-1"
-                                  title="Edit Expense"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  onClick={async () => { if (await confirm({ message: 'Delete expense?', variant: 'danger' })) deleteExpenseMutation.mutate(e.id); }}
-                                  style={{ color: 'var(--text-muted)' }}
-                                  className="hover:text-danger p-1"
-                                  title="Delete Expense"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {(canEdit || e.submitted_by === user?.id) && (
+                                  <button
+                                    onClick={() => handleEditExpense(e)}
+                                    style={{ color: 'var(--text-secondary)' }}
+                                    className="hover:text-primary p-1"
+                                    title="Edit Expense"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                )}
+                                {(canDelete || e.submitted_by === user?.id) && (
+                                  <button
+                                    onClick={async () => { if (await confirm({ message: 'Delete expense?', variant: 'danger' })) deleteExpenseMutation.mutate(e.id); }}
+                                    style={{ color: 'var(--text-muted)' }}
+                                    className="hover:text-danger p-1"
+                                    title="Delete Expense"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                               </>
                             )}
                             <Link

@@ -64,14 +64,9 @@ export default function TimesheetApprovalsPage() {
 
   const { data: timesheets = [], isLoading, isError: timesheetsError } = useQuery<Timesheet[]>({
     queryKey: ['allTimesheetsForApprovals'],
-    // `all: 1` bypasses the backend's default "current week only" filter — without it,
-    // any entry logged before this calendar week would silently never appear here,
-    // even though it's still waiting on approval.
-    // Note: /timesheets never paginates, so the response interceptor already unwraps it to a
-    // flat array (unlike /projects or /users, which are paginated and keep the {data, meta} envelope).
     queryFn: async () => {
       const res = await timesheetsApi.list({ all: 1 });
-      return res.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray((res.data as any)?.data) ? (res.data as any).data : []);
     }
   });
 
@@ -79,7 +74,7 @@ export default function TimesheetApprovalsPage() {
     queryKey: ['projects', 'picker'],
     queryFn: async () => {
       const res = await projectsApi.list({ per_page: 200 });
-      return res.data.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
     }
   });
 
@@ -87,7 +82,7 @@ export default function TimesheetApprovalsPage() {
     queryKey: ['users', 'picker'],
     queryFn: async () => {
       const res = await usersApi.list({ per_page: 200 });
-      return res.data.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
     }
   });
 

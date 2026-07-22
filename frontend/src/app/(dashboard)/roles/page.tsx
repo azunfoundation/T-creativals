@@ -9,6 +9,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useAuthStore } from '@/store/auth';
 
 // Only the founder role is protected from editing here — RolePolicy/RoleController
 // hard-block renaming/deleting/syncing permissions on it server-side (every Policy's
@@ -67,6 +68,8 @@ function roleDotColor(role: Role): string {
 export default function RolesPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { user } = useAuthStore();
+  const canManageRoles = user?.permissions?.includes('roles.manage') ?? false;
 
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
@@ -203,7 +206,7 @@ export default function RolesPage() {
   });
 
   const togglePermission = (permName: string) => {
-    if (isProtectedRole) return;
+    if (isProtectedRole || !canManageRoles) return;
     setSelectedPermissions((prev) => {
       const next = new Set(prev);
       if (next.has(permName)) next.delete(permName);
@@ -213,7 +216,7 @@ export default function RolesPage() {
   };
 
   const toggleModule = (moduleKey: string) => {
-    if (isProtectedRole) return;
+    if (isProtectedRole || !canManageRoles) return;
     const modPerms = (permissionsByModule?.[moduleKey] ?? []).map((p) => p.name);
     const allChecked = modPerms.every((p) => selectedPermissions.has(p));
     setSelectedPermissions((prev) => {
@@ -315,16 +318,18 @@ export default function RolesPage() {
               <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>
                 {roles.length} Roles
               </p>
-              <button
-                onClick={() => { setNewRoleName(''); setNewRoleDescription(''); setIsCreateModalOpen(true); }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.25rem',
-                  fontSize: '0.75rem', fontWeight: 600, padding: '2px 6px', borderRadius: '4px',
-                }}
-              >
-                <Plus size={12} /> Add Role
-              </button>
+              {canManageRoles && (
+                <button
+                  onClick={() => { setNewRoleName(''); setNewRoleDescription(''); setIsCreateModalOpen(true); }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.25rem',
+                    fontSize: '0.75rem', fontWeight: 600, padding: '2px 6px', borderRadius: '4px',
+                  }}
+                >
+                  <Plus size={12} /> Add Role
+                </button>
+              )}
             </div>
             <div style={{ padding: '0.5rem' }}>
               {roles.map((role) => {
@@ -391,7 +396,7 @@ export default function RolesPage() {
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                      {!isProtectedRole && (
+                      {canManageRoles && !isProtectedRole && (
                         <button
                           onClick={() => setIsDeleteConfirmOpen(true)}
                           className="btn btn-secondary"
@@ -401,28 +406,32 @@ export default function RolesPage() {
                           <Trash2 size={15} />
                         </button>
                       )}
-                      <button
-                        onClick={() => {
-                          setNewRoleName(`${selectedRole.name}_copy`);
-                          setNewRoleDescription(`Clone of ${selectedRole.display_name || selectedRole.name}. ${selectedRole.description || ''}`);
-                          setIsCloneModalOpen(true);
-                        }}
-                        className="btn btn-secondary"
-                        style={{ gap: '0.25rem', display: 'flex', alignItems: 'center' }}
-                        title="Clone Role"
-                      >
-                        <Copy size={14} />
-                        <span>Clone</span>
-                      </button>
-                      <button
-                        onClick={handleSave}
-                        disabled={isProtectedRole || saveMutation.isPending}
-                        className="btn btn-primary"
-                        style={{ gap: '0.5rem', display: 'flex', alignItems: 'center' }}
-                      >
-                        <Save size={15} />
-                        {saveMutation.isPending ? 'Saving…' : 'Save Permissions'}
-                      </button>
+                      {canManageRoles && (
+                        <button
+                          onClick={() => {
+                            setNewRoleName(`${selectedRole.name}_copy`);
+                            setNewRoleDescription(`Clone of ${selectedRole.display_name || selectedRole.name}. ${selectedRole.description || ''}`);
+                            setIsCloneModalOpen(true);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ gap: '0.25rem', display: 'flex', alignItems: 'center' }}
+                          title="Clone Role"
+                        >
+                          <Copy size={14} />
+                          <span>Clone</span>
+                        </button>
+                      )}
+                      {canManageRoles && (
+                        <button
+                          onClick={handleSave}
+                          disabled={isProtectedRole || saveMutation.isPending}
+                          className="btn btn-primary"
+                          style={{ gap: '0.5rem', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Save size={15} />
+                          {saveMutation.isPending ? 'Saving…' : 'Save Permissions'}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -457,10 +466,10 @@ export default function RolesPage() {
                               checked={allChecked}
                               ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
                               onChange={() => toggleModule(moduleKey)}
-                              disabled={isProtectedRole}
-                              style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: isProtectedRole ? 'not-allowed' : 'pointer' }}
+                              disabled={isProtectedRole || !canManageRoles}
+                              style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: (isProtectedRole || !canManageRoles) ? 'not-allowed' : 'pointer' }}
                             />
-                            <label htmlFor={`module-${moduleKey}`} style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', cursor: isProtectedRole ? 'not-allowed' : 'pointer' }}>
+                            <label htmlFor={`module-${moduleKey}`} style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', cursor: (isProtectedRole || !canManageRoles) ? 'not-allowed' : 'pointer' }}>
                               {moduleLabel(moduleKey)}
                             </label>
                             <span style={{
@@ -492,15 +501,15 @@ export default function RolesPage() {
                                   padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)',
                                   background: selectedPermissions.has(perm.name) ? 'var(--accent-subtle)' : 'var(--surface-elevated)',
                                   border: `1px solid ${selectedPermissions.has(perm.name) ? 'rgba(124,58,237,0.3)' : 'transparent'}`,
-                                  cursor: isProtectedRole ? 'not-allowed' : 'pointer',
+                                  cursor: (isProtectedRole || !canManageRoles) ? 'not-allowed' : 'pointer',
                                 }}
                               >
                                 <input
                                   type="checkbox"
                                   checked={selectedPermissions.has(perm.name)}
                                   onChange={() => togglePermission(perm.name)}
-                                  disabled={isProtectedRole}
-                                  style={{ accentColor: 'var(--accent)', width: 13, height: 13 }}
+                                  disabled={isProtectedRole || !canManageRoles}
+                                  style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: (isProtectedRole || !canManageRoles) ? 'not-allowed' : 'pointer' }}
                                 />
                                 <span style={{
                                   fontSize: '0.8125rem',

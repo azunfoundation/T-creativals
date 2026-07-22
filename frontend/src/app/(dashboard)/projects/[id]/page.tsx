@@ -69,6 +69,9 @@ export default function ProjectDetailPage() {
   const { user } = useAuthStore();
   const { setActiveProjectId } = useWorkspace();
   const canViewFinancials = user?.permissions?.includes('projects.profitability') || user?.permissions?.includes('reports.view_financial');
+  const canCreateTask = user?.permissions?.includes('tasks.create') ?? false;
+  const canEditProject = user?.permissions?.includes('projects.edit') ?? false;
+  const canDeleteProject = user?.permissions?.includes('projects.delete') ?? false;
   const { confirm, prompt } = useModal();
   const { showToast } = useToast();
   const params = useParams();
@@ -639,7 +642,7 @@ export default function ProjectDetailPage() {
           </div>
 
           {/* Quick Context actions */}
-          {activeTab === 'tasks' && (
+          {activeTab === 'tasks' && canCreateTask && (
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button
                 onClick={() => setShowApplyTemplateModal(true)}
@@ -773,16 +776,18 @@ export default function ProjectDetailPage() {
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>Members</span>
-                    <button
-                      onClick={() => setShowAddMemberForm(!showAddMemberForm)}
-                      style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer' }}
-                    >
-                      <UserPlus size={13} /> Add
-                    </button>
+                    {canEditProject && (
+                      <button
+                        onClick={() => setShowAddMemberForm(!showAddMemberForm)}
+                        style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer' }}
+                      >
+                        <UserPlus size={13} /> Add
+                      </button>
+                    )}
                   </div>
 
                   {/* Add Member inline form */}
-                  {showAddMemberForm && (
+                  {canEditProject && showAddMemberForm && (
                     <form onSubmit={handleAddMember} style={{ background: 'var(--surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <select
                         required
@@ -834,18 +839,20 @@ export default function ProjectDetailPage() {
                             </div>
                           </div>
                           
-                          <button
-                            onClick={async () => {
-                              if (await confirm({ message: `Are you sure you want to remove ${name} from this project?`, variant: 'danger' })) {
-                                removeMemberMutation.mutate(member.user_id);
-                              }
-                            }}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
-                            className="hover:text-danger"
-                            title="Remove Member"
-                          >
-                            <Trash size={14} />
-                          </button>
+                          {canEditProject && (
+                            <button
+                              onClick={async () => {
+                                if (await confirm({ message: `Are you sure you want to remove ${name} from this project?`, variant: 'danger' })) {
+                                  removeMemberMutation.mutate(member.user_id);
+                                }
+                              }}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                              className="hover:text-danger"
+                              title="Remove Member"
+                            >
+                              <Trash size={14} />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1052,7 +1059,7 @@ export default function ProjectDetailPage() {
                     </div>
 
                     {/* Inline Add Milestone Form */}
-                    {showAddMilestoneForm && (
+                    {canEditProject && showAddMilestoneForm && (
                       <form onSubmit={handleAddMilestone} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'var(--surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginTop: '0.5rem' }}>
                         <input
                           type="text"
@@ -1088,7 +1095,7 @@ export default function ProjectDetailPage() {
                       </form>
                     )}
 
-                    {!showAddMilestoneForm && (
+                    {canEditProject && !showAddMilestoneForm && (
                       <button
                         onClick={() => setShowAddMilestoneForm(true)}
                         style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: 'fit-content', padding: 0, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem' }}

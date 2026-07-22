@@ -94,6 +94,9 @@ const getAvatarStyle = (name: string) => {
 export default function ProjectsPage() {
   const { user } = useAuthStore();
   const canViewFinancials = user?.permissions?.includes('projects.profitability') || user?.permissions?.includes('reports.view_financial');
+  const canCreate = user?.permissions?.includes('projects.create') ?? false;
+  const canEdit = user?.permissions?.includes('projects.edit') ?? false;
+  const canDelete = user?.permissions?.includes('projects.delete') ?? false;
   const { confirm, prompt } = useModal();
   const queryClient = useQueryClient();
 
@@ -127,9 +130,9 @@ export default function ProjectsPage() {
     const saved = getPagePreference<any>('projects', null);
     if (saved) {
       if (saved.viewMode) setViewMode(saved.viewMode);
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
-      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
-      if (saved.managerFilter !== undefined) setManagerFilter(saved.managerFilter);
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
+      if (saved.statusFilter != null) setStatusFilter(String(saved.statusFilter));
+      if (saved.managerFilter != null) setManagerFilter(String(saved.managerFilter));
     }
     setIsInitialized(true);
   }, [workspaceLoaded, isInitialized, getPagePreference]);
@@ -625,13 +628,15 @@ export default function ProjectsPage() {
             </button>
           </div>
 
-          <button
-            onClick={() => setShowDrawer(true)}
-            className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-          >
-            <Plus size={16} /> New Project
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setShowDrawer(true)}
+              className="btn btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+            >
+              <Plus size={16} /> New Project
+            </button>
+          )}
         </div>
       </div>
 
@@ -644,7 +649,7 @@ export default function ProjectsPage() {
             <input
               type="text"
               placeholder="Search projects, client, manager..."
-              value={searchQuery}
+              value={searchQuery ?? ''}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input"
               style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem', height: '38px', fontSize: '0.875rem' }}
@@ -654,7 +659,7 @@ export default function ProjectsPage() {
 
           {/* Status Filter */}
           <select
-            value={statusFilter}
+            value={statusFilter ?? ''}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="form-input"
             style={{ width: '140px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -667,7 +672,7 @@ export default function ProjectsPage() {
 
           {/* Manager Filter */}
           <select
-            value={managerFilter}
+            value={managerFilter ?? ''}
             onChange={(e) => setManagerFilter(e.target.value)}
             className="form-input"
             style={{ width: '160px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -713,7 +718,7 @@ export default function ProjectsPage() {
               description={projectsData.length === 0
                 ? "Click \"New Project\" above to create your first project."
                 : 'Try clearing your search or filters to see more results.'}
-              action={projectsData.length === 0 ? (
+              action={projectsData.length === 0 && canCreate ? (
                 <button onClick={() => setShowDrawer(true)} className="btn btn-primary btn-sm">
                   <Plus size={14} /> New Project
                 </button>
@@ -808,115 +813,121 @@ export default function ProjectsPage() {
                           <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}>
                             View Details
                           </Link>
-                          <div style={{ position: 'relative', display: 'inline-block' }}>
-                            <button
-                              id={`more-actions-btn-${project.id}`}
-                              onClick={() => setActiveProjectMenuId(activeProjectMenuId === project.id ? null : project.id)}
-                              className="btn btn-secondary btn-sm btn-icon"
-                              style={{ padding: '0.375rem', border: 'none', background: 'transparent', color: 'var(--text-secondary)' }}
-                            >
-                              <MoreVertical size={16} />
-                            </button>
-                            
-                            {activeProjectMenuId === project.id && (
-                              <>
-                                {/* Backdrop click closer */}
-                                <div
-                                  onClick={() => setActiveProjectMenuId(null)}
-                                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
-                                />
-                                
-                                {/* Dropdown Menu Container */}
-                                <div style={{
-                                  position: 'absolute',
-                                  top: '100%',
-                                  right: 0,
-                                  marginTop: '0.25rem',
-                                  background: 'var(--surface-elevated)',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: 'var(--radius-md)',
-                                  boxShadow: 'var(--shadow-md)',
-                                  zIndex: 50,
-                                  minWidth: '170px',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  padding: '0.25rem 0',
-                                }}>
-                                  {/* View Details Link */}
-                                  <Link
-                                    href={`/projects/${project.id}`}
+                          {(canEdit || canDelete) && (
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                              <button
+                                id={`more-actions-btn-${project.id}`}
+                                onClick={() => setActiveProjectMenuId(activeProjectMenuId === project.id ? null : project.id)}
+                                className="btn btn-secondary btn-sm btn-icon"
+                                style={{ padding: '0.375rem', border: 'none', background: 'transparent', color: 'var(--text-secondary)' }}
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+                              
+                              {activeProjectMenuId === project.id && (
+                                <>
+                                  {/* Backdrop click closer */}
+                                  <div
                                     onClick={() => setActiveProjectMenuId(null)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      width: '100%',
-                                      padding: '0.5rem 0.875rem',
-                                      fontSize: '0.8125rem',
-                                      color: 'var(--text-primary)',
-                                      textAlign: 'left',
-                                    }}
-                                    className="hover:bg-[var(--surface-hover)]"
-                                  >
-                                    <ExternalLink size={14} />
-                                    View Details
-                                  </Link>
+                                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
+                                  />
+                                  
+                                  {/* Dropdown Menu Container */}
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    right: 0,
+                                    marginTop: '0.25rem',
+                                    background: 'var(--surface-elevated)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius-md)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    zIndex: 50,
+                                    minWidth: '170px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    padding: '0.25rem 0',
+                                  }}>
+                                    {/* View Details Link */}
+                                    <Link
+                                      href={`/projects/${project.id}`}
+                                      onClick={() => setActiveProjectMenuId(null)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        width: '100%',
+                                        padding: '0.5rem 0.875rem',
+                                        fontSize: '0.8125rem',
+                                        color: 'var(--text-primary)',
+                                        textAlign: 'left',
+                                      }}
+                                      className="hover:bg-[var(--surface-hover)]"
+                                    >
+                                      <ExternalLink size={14} />
+                                      View Details
+                                    </Link>
 
-                                  {/* Edit Project Link */}
-                                  <button
-                                    onClick={() => {
-                                      setActiveProjectMenuId(null);
-                                      openEditDrawer(project);
-                                    }}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      width: '100%',
-                                      padding: '0.5rem 0.875rem',
-                                      fontSize: '0.8125rem',
-                                      color: 'var(--text-primary)',
-                                      textAlign: 'left',
-                                      background: 'none',
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                    }}
-                                    className="hover:bg-[var(--surface-hover)]"
-                                  >
-                                    <Edit2 size={14} />
-                                    Edit Project
-                                  </button>
+                                    {/* Edit Project Link */}
+                                    {canEdit && (
+                                      <button
+                                        onClick={() => {
+                                          setActiveProjectMenuId(null);
+                                          openEditDrawer(project);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.5rem',
+                                          width: '100%',
+                                          padding: '0.5rem 0.875rem',
+                                          fontSize: '0.8125rem',
+                                          color: 'var(--text-primary)',
+                                          textAlign: 'left',
+                                          background: 'none',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                        }}
+                                        className="hover:bg-[var(--surface-hover)]"
+                                      >
+                                        <Edit2 size={14} />
+                                        Edit Project
+                                      </button>
+                                    )}
 
-                                  {/* Delete Project Action */}
-                                  <button
-                                    onClick={async () => {
-                                      setActiveProjectMenuId(null);
-                                      if (await confirm({ message: 'Are you sure you want to delete this project?', variant: 'danger' })) {
-                                        deleteProjectMutation.mutate(project.id);
-                                      }
-                                    }}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      width: '100%',
-                                      padding: '0.5rem 0.875rem',
-                                      fontSize: '0.8125rem',
-                                      color: 'var(--danger)',
-                                      textAlign: 'left',
-                                      background: 'none',
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                    }}
-                                    className="hover:bg-[var(--surface-hover)]"
-                                  >
-                                    <Trash2 size={14} style={{ color: 'var(--danger)' }} />
-                                    Delete Project
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
+                                    {/* Delete Project Action */}
+                                    {canDelete && (
+                                      <button
+                                        onClick={async () => {
+                                          setActiveProjectMenuId(null);
+                                          if (await confirm({ message: 'Are you sure you want to delete this project?', variant: 'danger' })) {
+                                            deleteProjectMutation.mutate(project.id);
+                                          }
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.5rem',
+                                          width: '100%',
+                                          padding: '0.5rem 0.875rem',
+                                          fontSize: '0.8125rem',
+                                          color: 'var(--danger)',
+                                          textAlign: 'left',
+                                          background: 'none',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                        }}
+                                        className="hover:bg-[var(--surface-hover)]"
+                                      >
+                                        <Trash2 size={14} style={{ color: 'var(--danger)' }} />
+                                        Delete Project
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

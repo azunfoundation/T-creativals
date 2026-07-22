@@ -628,6 +628,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           navItems={visibleNavItems}
           onClose={() => setCmdOpen(false)}
           onNavigate={(href) => { setCmdOpen(false); router.push(href); }}
+          hasPermission={hasPermission}
         />
       )}
 
@@ -640,7 +641,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 // -- Premium Command Palette V2 ------------------------------------
-function CommandPaletteV2({ navItems, onClose, onNavigate }: { navItems: NavItem[]; onClose: () => void; onNavigate: (href: string) => void }) {
+function CommandPaletteV2({
+  navItems,
+  onClose,
+  onNavigate,
+  hasPermission,
+}: {
+  navItems: NavItem[];
+  onClose: () => void;
+  onNavigate: (href: string) => void;
+  hasPermission: (permissions?: string[]) => boolean;
+}) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -652,17 +663,19 @@ function CommandPaletteV2({ navItems, onClose, onNavigate }: { navItems: NavItem
   }, [onClose]);
 
   const QUICK_ACTIONS_CMD = [
-    { label: 'New Lead',    desc: 'Create a CRM lead',   href: '/crm?new=true',      icon: Users },
-    { label: 'New Invoice', desc: 'Create an invoice',   href: '/invoices/create',   icon: Receipt },
-    { label: 'New Project', desc: 'Start a new project', href: '/projects?new=true', icon: FolderKanban },
-    { label: 'New Task',    desc: 'Add a task',          href: '/tasks?new=true',    icon: CheckSquare },
-    { label: 'New Expense', desc: 'Log an expense',      href: '/expenses?new=true', icon: CreditCard },
+    { label: 'New Lead',    desc: 'Create a CRM lead',   href: '/crm?new=true',      icon: Users,        permissions: ['leads.create'] },
+    { label: 'New Invoice', desc: 'Create an invoice',   href: '/invoices/create',   icon: Receipt,      permissions: ['invoices.create'] },
+    { label: 'New Project', desc: 'Start a new project', href: '/projects?new=true', icon: FolderKanban, permissions: ['projects.create'] },
+    { label: 'New Task',    desc: 'Add a task',          href: '/tasks?new=true',    icon: CheckSquare,  permissions: ['tasks.create'] },
+    { label: 'New Expense', desc: 'Log an expense',      href: '/expenses?new=true', icon: CreditCard,   permissions: undefined as string[] | undefined },
   ];
 
   const filteredNav = navItems.filter((n) => n.label.toLowerCase().includes(query.toLowerCase()));
-  const filteredActions = QUICK_ACTIONS_CMD.filter((a) =>
-    a.label.toLowerCase().includes(query.toLowerCase()) || a.desc.toLowerCase().includes(query.toLowerCase())
-  );
+  const filteredActions = QUICK_ACTIONS_CMD
+    .filter((a) => hasPermission(a.permissions))
+    .filter((a) =>
+      a.label.toLowerCase().includes(query.toLowerCase()) || a.desc.toLowerCase().includes(query.toLowerCase())
+    );
   const hasResults = filteredNav.length > 0 || filteredActions.length > 0;
 
   return (

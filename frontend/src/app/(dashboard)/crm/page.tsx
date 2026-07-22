@@ -15,6 +15,7 @@ import {
   ArrowRightCircle, UserCheck, Sparkles, CheckCircle2, Lightbulb
 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuthStore } from '@/store/auth';
 import {
   leads as leadsApi,
   leadStages as stagesApi,
@@ -164,6 +165,11 @@ export default function LeadsPage() {
   const { confirm } = useModal();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const canCreate = user?.permissions?.includes('leads.create') ?? false;
+  const canEdit   = user?.permissions?.includes('leads.edit')   ?? false;
+  const canDelete = user?.permissions?.includes('leads.delete') ?? false;
+  const canConvert = user?.permissions?.includes('leads.convert') ?? false;
 
   // Layout and view states
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
@@ -211,13 +217,13 @@ export default function LeadsPage() {
     const saved = getPagePreference<any>('crm', null);
     if (saved) {
       if (saved.viewMode) setViewMode(saved.viewMode);
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
-      if (saved.stageFilter !== undefined) setStageFilter(saved.stageFilter);
-      if (saved.sourceFilter !== undefined) setSourceFilter(saved.sourceFilter);
-      if (saved.execFilter !== undefined) setExecFilter(saved.execFilter);
-      if (saved.priorityFilter !== undefined) setPriorityFilter(saved.priorityFilter);
-      if (saved.tempFilter !== undefined) setTempFilter(saved.tempFilter);
-      if (saved.budgetRangeFilter !== undefined) setBudgetRangeFilter(saved.budgetRangeFilter);
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
+      if (saved.stageFilter != null) setStageFilter(String(saved.stageFilter));
+      if (saved.sourceFilter != null) setSourceFilter(String(saved.sourceFilter));
+      if (saved.execFilter != null) setExecFilter(String(saved.execFilter));
+      if (saved.priorityFilter != null) setPriorityFilter(String(saved.priorityFilter));
+      if (saved.tempFilter != null) setTempFilter(String(saved.tempFilter));
+      if (saved.budgetRangeFilter != null) setBudgetRangeFilter(String(saved.budgetRangeFilter));
       if (saved.sortField) setSortField(saved.sortField);
       if (saved.sortOrder) setSortOrder(saved.sortOrder);
     }
@@ -690,9 +696,11 @@ export default function LeadsPage() {
             </button>
           </div>
 
-          <button onClick={() => openCreateModal()} className="btn btn-primary">
-            <Plus size={16} /> Add Lead
-          </button>
+          {canCreate && (
+            <button onClick={() => openCreateModal()} className="btn btn-primary">
+              <Plus size={16} /> Add Lead
+            </button>
+          )}
         </div>
       </div>
 
@@ -706,7 +714,7 @@ export default function LeadsPage() {
             <input
               type="text"
               placeholder="Search company, contact name, email..."
-              value={searchQuery}
+              value={searchQuery ?? ''}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input"
               style={{ paddingLeft: '2.25rem', height: '38px', fontSize: '0.875rem' }}
@@ -714,7 +722,7 @@ export default function LeadsPage() {
           </div>
 
           <select
-            value={stageFilter}
+            value={stageFilter ?? ''}
             onChange={(e) => setStageFilter(e.target.value)}
             className="form-input"
             style={{ width: '125px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -726,7 +734,7 @@ export default function LeadsPage() {
           </select>
 
           <select
-            value={sourceFilter}
+            value={sourceFilter ?? ''}
             onChange={(e) => setSourceFilter(e.target.value)}
             className="form-input"
             style={{ width: '125px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -738,7 +746,7 @@ export default function LeadsPage() {
           </select>
 
           <select
-            value={execFilter}
+            value={execFilter ?? ''}
             onChange={(e) => setExecFilter(e.target.value)}
             className="form-input"
             style={{ width: '140px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -750,7 +758,7 @@ export default function LeadsPage() {
           </select>
 
           <select
-            value={priorityFilter}
+            value={priorityFilter ?? ''}
             onChange={(e) => setPriorityFilter(e.target.value)}
             className="form-input"
             style={{ width: '120px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -763,7 +771,7 @@ export default function LeadsPage() {
           </select>
 
           <select
-            value={tempFilter}
+            value={tempFilter ?? ''}
             onChange={(e) => setTempFilter(e.target.value)}
             className="form-input"
             style={{ width: '110px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -775,7 +783,7 @@ export default function LeadsPage() {
           </select>
 
           <select
-            value={budgetRangeFilter}
+            value={budgetRangeFilter ?? ''}
             onChange={(e) => setBudgetRangeFilter(e.target.value)}
             className="form-input"
             style={{ width: '130px', height: '38px', padding: '0 0.5rem', fontSize: '0.8125rem' }}
@@ -958,28 +966,30 @@ export default function LeadsPage() {
                     </div>
 
                     {/* Column Footer: quick add into this stage */}
-                    <button
-                      onClick={() => openCreateModal(stage.id)}
-                      className="crm-col-add"
-                      style={{
-                        margin: '0.375rem 0.625rem 0.625rem',
-                        padding: '0.4rem',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px dashed var(--border)',
-                        background: 'transparent',
-                        color: 'var(--text-muted)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                        flexShrink: 0
-                      }}
-                    >
-                      <Plus size={13} /> Add Lead
-                    </button>
+                    {canCreate && (
+                      <button
+                        onClick={() => openCreateModal(stage.id)}
+                        className="crm-col-add"
+                        style={{
+                          margin: '0.375rem 0.625rem 0.625rem',
+                          padding: '0.4rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px dashed var(--border)',
+                          background: 'transparent',
+                          color: 'var(--text-muted)',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                          flexShrink: 0
+                        }}
+                      >
+                        <Plus size={13} /> Add Lead
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -1093,17 +1103,19 @@ export default function LeadsPage() {
                           <Link href={`/crm/${lead.id}`} className="btn btn-ghost btn-sm btn-icon" title="View details">
                             <Eye size={13} />
                           </Link>
-                          <button
-                            onClick={async () => {
-                              if (await confirm({ message: 'Are you sure you want to delete this lead?', variant: 'danger' })) {
-                                deleteLeadMutation.mutate(lead.id);
-                              }
-                            }}
-                            className="btn btn-danger btn-sm btn-icon"
-                            title="Delete"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={async () => {
+                                if (await confirm({ message: 'Are you sure you want to delete this lead?', variant: 'danger' })) {
+                                  deleteLeadMutation.mutate(lead.id);
+                                }
+                              }}
+                              className="btn btn-danger btn-sm btn-icon"
+                              title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -103,8 +103,8 @@ export default function InvoicesDashboard() {
     if (saved) {
       if (saved.activeTab) setActiveTab(saved.activeTab);
       if (saved.viewMode) setViewMode(saved.viewMode);
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
-      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
+      if (saved.statusFilter != null) setStatusFilter(String(saved.statusFilter));
     }
     setIsInitialized(true);
   }, [workspaceLoaded, isInitialized, getPagePreference]);
@@ -441,7 +441,7 @@ export default function InvoicesDashboard() {
               <input
                 type="text"
                 placeholder="Search by invoice #, client, or title..."
-                value={searchQuery}
+                value={searchQuery ?? ''}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input"
                 style={{ paddingLeft: '2.5rem', borderRadius: '9999px', fontSize: '0.875rem', backgroundColor: 'var(--surface-elevated)' }}
@@ -457,7 +457,7 @@ export default function InvoicesDashboard() {
 
               <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.125rem 0.5rem', backgroundColor: 'var(--surface)', height: '36px' }}>
                 <select
-                  value={statusFilter}
+                  value={statusFilter ?? ''}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.875rem', fontWeight: 500, padding: '0.25rem', width: '130px', cursor: 'pointer', appearance: 'none' }}
                 >

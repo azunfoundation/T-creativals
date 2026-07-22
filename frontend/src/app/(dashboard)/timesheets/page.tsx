@@ -23,6 +23,7 @@ import {
 import { formatDate, getInitials } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useAuthStore } from '@/store/auth';
 
 // ============================================================
 // Helper dates
@@ -83,8 +84,8 @@ const TIMESHEETS_HOWTO = {
 // Project visual identity (icon avatar + category chip)
 // ============================================================
 
-const getProjectStyle = (name: string = '') => {
-  const lower = name.toLowerCase();
+const getProjectStyle = (name?: string | null) => {
+  const lower = (name || '').toLowerCase();
   if (lower.includes('web') || lower.includes('site') || lower.includes('portal') || lower.includes('app')) {
     return { Icon: Monitor, iconColor: '#7c3aed', iconBg: 'rgba(124, 58, 237, 0.12)', chipClass: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-400', label: 'Website' };
   }
@@ -180,6 +181,9 @@ export default function TimesheetsPage() {
   const { confirm } = useModal();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const canLog = user?.permissions?.includes('timesheets.log') ?? false;
+  const canViewAll = user?.permissions?.includes('timesheets.view_all') ?? false;
 
   // Layout states
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -219,21 +223,21 @@ export default function TimesheetsPage() {
     const saved = getPagePreference<any>('timesheets', null);
     if (saved) {
       if (saved.viewMode) setViewMode(saved.viewMode);
-      if (saved.gridSearch !== undefined) setGridSearch(saved.gridSearch);
-      if (saved.gridProjectFilter !== undefined) {
-        setGridProjectFilter(saved.gridProjectFilter);
+      if (saved.gridSearch != null) setGridSearch(String(saved.gridSearch));
+      if (saved.gridProjectFilter != null) {
+        setGridProjectFilter(String(saved.gridProjectFilter));
       } else if (activeProjectId) {
         setGridProjectFilter(String(activeProjectId));
       }
-      if (saved.gridMemberFilter !== undefined) setGridMemberFilter(saved.gridMemberFilter);
-      if (saved.searchQuery !== undefined) setSearchQuery(saved.searchQuery);
-      if (saved.projectFilter !== undefined) {
-        setProjectFilter(saved.projectFilter);
+      if (saved.gridMemberFilter != null) setGridMemberFilter(String(saved.gridMemberFilter));
+      if (saved.searchQuery != null) setSearchQuery(String(saved.searchQuery));
+      if (saved.projectFilter != null) {
+        setProjectFilter(String(saved.projectFilter));
       } else if (activeProjectId) {
         setProjectFilter(String(activeProjectId));
       }
-      if (saved.statusFilter !== undefined) setStatusFilter(saved.statusFilter);
-      if (saved.billableFilter !== undefined) setBillableFilter(saved.billableFilter);
+      if (saved.statusFilter != null) setStatusFilter(String(saved.statusFilter));
+      if (saved.billableFilter != null) setBillableFilter(String(saved.billableFilter));
       if (saved.showWeekends !== undefined) setShowWeekends(saved.showWeekends);
     } else if (activeProjectId) {
       setGridProjectFilter(String(activeProjectId));
@@ -329,13 +333,9 @@ export default function TimesheetsPage() {
 
   const { data: timesheetsData = [], isLoading, isError: timesheetsError } = useQuery<Timesheet[]>({
     queryKey: ['timesheets', 'all'],
-    // `all: 1` bypasses the backend's default "current week only" filter — without it,
-    // navigating to a past/future week (or searching List View) would always come back empty.
-    // Note: /timesheets never paginates, so the response interceptor already unwraps it to a
-    // flat array (unlike /projects or /tasks, which are paginated and keep the {data, meta} envelope).
     queryFn: async () => {
       const res = await timesheetsApi.list({ all: 1 });
-      return res.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray((res.data as any)?.data) ? (res.data as any).data : []);
     }
   });
 
@@ -343,7 +343,7 @@ export default function TimesheetsPage() {
     queryKey: ['projects', 'picker'],
     queryFn: async () => {
       const res = await projectsApi.list({ per_page: 200 });
-      return res.data.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
     }
   });
 
@@ -351,7 +351,7 @@ export default function TimesheetsPage() {
     queryKey: ['tasks', 'picker'],
     queryFn: async () => {
       const res = await tasksApi.list({ per_page: 500 });
-      return res.data.data;
+      return Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
     }
   });
 
@@ -850,7 +850,7 @@ export default function TimesheetsPage() {
           </button>
         </div>
 
-        {viewMode === 'grid' && (
+        {viewMode === 'grid' && canLog && (
           <button onClick={handleWeeklySubmit} className="btn btn-primary h-10 px-5">
             <Send size={15} />
             Submit Week for Approval
@@ -952,17 +952,19 @@ export default function TimesheetsPage() {
                     ))}
                   </select>
 
-                  <select
-                    value={gridMemberFilter}
-                    onChange={(e) => setGridMemberFilter(e.target.value)}
-                    className="form-input"
-                    style={{ width: '140px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
-                  >
-                    <option value="">All Members</option>
-                    {memberOptions.map(m => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
+                  {canViewAll && (
+                    <select
+                      value={gridMemberFilter}
+                      onChange={(e) => setGridMemberFilter(e.target.value)}
+                      className="form-input"
+                      style={{ width: '140px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
+                    >
+                      <option value="">All Members</option>
+                      {memberOptions.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  )}
 
                   <button
                     onClick={() => setShowWeekends(w => !w)}
@@ -976,13 +978,15 @@ export default function TimesheetsPage() {
                     <Settings size={15} />
                   </button>
 
-                  <button
-                    onClick={() => { resetForm(); setShowLogModal(true); }}
-                    className="btn btn-primary btn-sm"
-                    style={{ height: '36px' }}
-                  >
-                    <Plus size={14} /> Log Time
-                  </button>
+                  {canLog && (
+                    <button
+                      onClick={() => { resetForm(); setShowLogModal(true); }}
+                      className="btn btn-primary btn-sm"
+                      style={{ height: '36px' }}
+                    >
+                      <Plus size={14} /> Log Time
+                    </button>
+                  )}
                 </div>
 
                 {/* Grid table */}
@@ -1351,7 +1355,7 @@ export default function TimesheetsPage() {
               <input
                 type="text"
                 placeholder="Search user, project, description..."
-                value={searchQuery}
+                value={searchQuery ?? ''}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input"
                 style={{ paddingLeft: '2.25rem', height: '36px', fontSize: '0.8125rem' }}
@@ -1361,7 +1365,7 @@ export default function TimesheetsPage() {
             <Filter size={14} className="text-zinc-400" />
 
             <select
-              value={projectFilter}
+              value={projectFilter ?? ''}
               onChange={(e) => setProjectFilter(e.target.value)}
               className="form-input"
               style={{ width: '150px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
@@ -1373,7 +1377,7 @@ export default function TimesheetsPage() {
             </select>
 
             <select
-              value={statusFilter}
+              value={statusFilter ?? ''}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="form-input"
               style={{ width: '130px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}
@@ -1386,7 +1390,7 @@ export default function TimesheetsPage() {
             </select>
 
             <select
-              value={billableFilter}
+              value={billableFilter ?? ''}
               onChange={(e) => setBillableFilter(e.target.value)}
               className="form-input"
               style={{ width: '120px', height: '36px', padding: '0 0.5rem', fontSize: '0.75rem' }}

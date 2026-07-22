@@ -9,6 +9,7 @@ import { getInitials } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { useAuthStore } from '@/store/auth';
 
 const DEPARTMENTS_HOWTO = {
   overview: 'Departments are the teams your company is organised into — like Design, Development, or Finance. Each user can be assigned to a department, and each department can have a head. Departments group people for org structure and team reporting.',
@@ -65,10 +66,14 @@ function DeptCard({
   dept,
   onEdit,
   onDelete,
+  canEdit,
+  canDelete,
 }: {
   dept: Department;
   onEdit: (d: Department) => void;
   onDelete: (id: number) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   return (
     <div
@@ -127,24 +132,30 @@ function DeptCard({
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flexShrink: 0 }}>
-          <button
-            id={`edit-dept-${dept.id}`}
-            onClick={() => onEdit(dept)}
-            className="btn btn-ghost btn-sm btn-icon"
-            title="Edit department"
-          >
-            <Edit2 size={13} />
-          </button>
-          <button
-            id={`delete-dept-${dept.id}`}
-            onClick={() => onDelete(dept.id)}
-            className="btn btn-danger btn-sm btn-icon"
-            title="Delete department"
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+        {(canEdit || canDelete) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flexShrink: 0 }}>
+            {canEdit && (
+              <button
+                id={`edit-dept-${dept.id}`}
+                onClick={() => onEdit(dept)}
+                className="btn btn-ghost btn-sm btn-icon"
+                title="Edit department"
+              >
+                <Edit2 size={13} />
+              </button>
+            )}
+            {canDelete && (
+              <button
+                id={`delete-dept-${dept.id}`}
+                onClick={() => onDelete(dept.id)}
+                className="btn btn-danger btn-sm btn-icon"
+                title="Delete department"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -298,6 +309,11 @@ function DeptFormModal({
 export default function DepartmentsPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { user } = useAuthStore();
+  const canCreate = user?.permissions?.includes('departments.create') ?? false;
+  const canEdit   = user?.permissions?.includes('departments.edit')   ?? false;
+  const canDelete = user?.permissions?.includes('departments.delete') ?? false;
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editDept, setEditDept] = useState<Department | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -358,13 +374,15 @@ export default function DepartmentsPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <HowToUseGuide moduleKey="departments" title="How Departments Work" content={DEPARTMENTS_HOWTO} />
-          <button
-            id="create-dept-btn"
-            onClick={() => { setEditDept(null); setModalOpen(true); }}
-            className="btn btn-primary"
-          >
-            <Plus size={16} /> New Department
-          </button>
+          {canCreate && (
+            <button
+              id="create-dept-btn"
+              onClick={() => { setEditDept(null); setModalOpen(true); }}
+              className="btn btn-primary"
+            >
+              <Plus size={16} /> New Department
+            </button>
+          )}
         </div>
       </div>
 
@@ -407,6 +425,8 @@ export default function DepartmentsPage() {
               dept={dept}
               onEdit={handleEdit}
               onDelete={(id) => setDeleteConfirm(id)}
+              canEdit={canEdit}
+              canDelete={canDelete}
             />
           ))}
         </div>

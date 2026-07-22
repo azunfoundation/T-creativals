@@ -18,6 +18,7 @@ import { FileUpload } from '@/components/ui/FileUpload';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { useModal } from '@/providers/ModalProvider';
 import { useToast } from '@/hooks/useToast';
+import { useAuthStore } from '@/store/auth';
 
 interface TaskDetailSlideOverProps {
   open: boolean;
@@ -61,6 +62,9 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
   const queryClient = useQueryClient();
   const { confirm } = useModal();
   const { showToast } = useToast();
+  const { user } = useAuthStore();
+  const canDelete = user?.permissions?.includes('tasks.delete') ?? false;
+  const canLogTime = user?.permissions?.includes('timesheets.log') ?? false;
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'timelogs' | 'attachments'>('details');
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -109,6 +113,8 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
     },
     enabled: open && taskId !== null,
   });
+
+  const canEdit = user?.permissions?.includes('tasks.edit') || task?.assigned_to === user?.id;
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ['users'],
@@ -160,7 +166,7 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
   // Sync state when task is loaded
   useEffect(() => {
     if (task) {
-      setEditingTitle(task.title);
+      setEditingTitle(task.title || '');
       setEditingDescription(task.description || '');
       // Only sync local completion when not currently dragging
       if (!completionDirtyRef.current) {
@@ -477,9 +483,10 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <input
                 type="text"
-                value={editingTitle}
+                value={editingTitle ?? ''}
                 onChange={(e) => setEditingTitle(e.target.value)}
                 onBlur={handleTitleBlur}
+                readOnly={!canEdit}
                 style={{
                   fontSize: '1.375rem',
                   fontWeight: 700,
@@ -501,12 +508,13 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                   value={task.status}
                   onChange={(e) => updateStatusMutation.mutate(e.target.value as Task['status'])}
                   aria-label="Task status"
+                  disabled={!canEdit}
                   style={{
                     appearance: 'none', WebkitAppearance: 'none',
                     background: 'var(--accent-subtle)', color: 'var(--accent)',
                     border: 'none', borderRadius: 'var(--radius-md)',
                     padding: '0.45rem 1.9rem 0.45rem 0.875rem',
-                    fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', outline: 'none',
+                    fontSize: '0.875rem', fontWeight: 700, cursor: !canEdit ? 'not-allowed' : 'pointer', outline: 'none',
                   }}
                 >
                   {(Object.keys(STATUS_LABELS) as Task['status'][]).map((s) => (
@@ -529,7 +537,7 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 5 }} onClick={() => setMenuOpen(false)} />
                     <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: '180px', overflow: 'hidden' }}>
-                      {task.status !== 'done' && (
+                      {task.status !== 'done' && canEdit && (
                         <button
                           onClick={() => { setMenuOpen(false); updateStatusMutation.mutate('done'); }}
                           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.625rem 0.875rem', fontSize: '0.8125rem', color: 'var(--text-primary)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
@@ -538,13 +546,15 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                           <CheckCircle2 size={14} style={{ color: 'var(--success)' }} /> Mark as Done
                         </button>
                       )}
-                      <button
-                        onClick={handleDeleteTask}
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.625rem 0.875rem', fontSize: '0.8125rem', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                        className="hover:bg-surface-elevated"
-                      >
-                        <Trash size={14} /> Delete Task
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={handleDeleteTask}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.625rem 0.875rem', fontSize: '0.8125rem', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                          className="hover:bg-surface-elevated"
+                        >
+                          <Trash size={14} /> Delete Task
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -561,7 +571,8 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                     value={task.priority}
                     onChange={(e) => updateTaskMutation.mutate({ priority: e.target.value as Task['priority'] })}
                     aria-label="Priority"
-                    style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', width: '100%', padding: 0 }}
+                    disabled={!canEdit}
+                    style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: !canEdit ? 'not-allowed' : 'pointer', width: '100%', padding: 0 }}
                   >
                     {(Object.keys(PRIORITY_META) as Task['priority'][]).map((p) => (
                       <option key={p} value={p}>{PRIORITY_META[p].label}</option>
@@ -580,7 +591,8 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                     value={task.assigned_to || ''}
                     onChange={(e) => updateTaskMutation.mutate({ assigned_to: e.target.value ? parseInt(e.target.value) : null })}
                     aria-label="Assignee"
-                    style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', width: '100%', padding: 0, textOverflow: 'ellipsis' }}
+                    disabled={!canEdit}
+                    style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: !canEdit ? 'not-allowed' : 'pointer', width: '100%', padding: 0, textOverflow: 'ellipsis' }}
                   >
                     <option value="">Unassigned</option>
                     {users.map((u) => (
@@ -597,7 +609,9 @@ export default function TaskDetailSlideOver({ open, onClose, taskId }: TaskDetai
                   value={task.due_date ? task.due_date.split('T')[0] : ''}
                   onChange={(e) => updateTaskMutation.mutate({ due_date: e.target.value || undefined })}
                   aria-label="Due date"
-                  style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', width: '100%', padding: 0 }}
+                  readOnly={!canEdit}
+                  disabled={!canEdit}
+                  style={{ background: 'transparent', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: !canEdit ? 'not-allowed' : 'pointer', width: '100%', padding: 0 }}
                 />
               </div>
 
