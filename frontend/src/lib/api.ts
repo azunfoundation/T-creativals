@@ -2769,6 +2769,82 @@ export const aiApi = {
     api.delete(`/ai/automations/${id}`),
 };
 
+export interface ClientCredential {
+  id: number;
+  is_favorite: boolean;
+  is_archived: boolean;
+  client_name: string;
+  client_id?: number | null;
+  platform: string;
+  credential_type: string;
+  username: string;
+  password?: string;
+  login_url?: string | null;
+  notes?: string | null;
+  tags?: string | null;
+  last_used_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientCredentialsListResponse {
+  data: ClientCredential[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+  stats: {
+    total_credentials: number;
+    favorite_credentials: number;
+    recently_used: number;
+  };
+  filters: {
+    clients: string[];
+    platforms: string[];
+    types: string[];
+  };
+}
+
+export const credentialsApi = {
+  list: (params?: {
+    search?: string;
+    tab?: string;
+    client_id?: number;
+    client_name_filter?: string;
+    platform_filter?: string;
+    type_filter?: string;
+    sort_by?: string;
+    sort_dir?: string;
+    page?: number;
+    per_page?: number;
+    archived?: boolean;
+  }) => api.get<ClientCredentialsListResponse>('/credentials', { params }),
+
+  show: (id: number) => api.get<{ data: ClientCredential }>(`/credentials/${id}`),
+
+  create: (data: Partial<ClientCredential>) =>
+    api.post<{ message: string; data: ClientCredential }>('/credentials', data),
+
+  update: (id: number, data: Partial<ClientCredential>) =>
+    api.put<{ message: string; data: ClientCredential }>(`/credentials/${id}`, data),
+
+  delete: (id: number) => api.delete<{ message: string }>(`/credentials/${id}`),
+
+  duplicate: (id: number) => api.post<{ message: string; data: ClientCredential }>(`/credentials/${id}/duplicate`),
+
+  logUsage: (id: number) => api.post<{ message: string; data: ClientCredential }>(`/credentials/${id}/log-usage`),
+
+  bulkArchive: (ids: number[]) => api.post<{ message: string }>('/credentials/bulk-archive', { ids }),
+
+  bulkDelete: (ids: number[]) => api.post<{ message: string }>('/credentials/bulk-delete', { ids }),
+
+  import: (credentials: Partial<ClientCredential>[]) =>
+    api.post<{ message: string }>('/credentials/import', { credentials }),
+};
+
+
 
 
 

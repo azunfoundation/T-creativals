@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\V1\ClientCommunicationController;
 use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\AiAutomationController;
 use App\Http\Controllers\Api\V1\SystemResetController;
+use App\Http\Controllers\Api\V1\ClientCredentialController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -426,6 +427,16 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('voice/talk', [AiController::class, 'voiceTalk']);
             Route::apiResource('automations', AiAutomationController::class);
         });
+
+        // ─── Client Credentials Vault (Founder only) ────────────────────────
+        Route::prefix('credentials')->group(function () {
+            Route::post('bulk-archive', [ClientCredentialController::class, 'bulkArchive']);
+            Route::post('bulk-delete', [ClientCredentialController::class, 'bulkDelete']);
+            Route::post('import', [ClientCredentialController::class, 'import']);
+            Route::post('{id}/duplicate', [ClientCredentialController::class, 'duplicate']);
+            Route::post('{id}/log-usage', [ClientCredentialController::class, 'logUsage']);
+        });
+        Route::apiResource('credentials', ClientCredentialController::class);
     });
 
     // ─── Client Portal Sprint 7 ───────────────────────────────────────────────

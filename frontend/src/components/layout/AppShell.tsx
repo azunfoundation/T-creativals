@@ -11,7 +11,7 @@ import {
   Search, Bell, Sun, Moon, LogOut, User, ChevronDown,
   UserCog, ShieldCheck, Sparkles, Briefcase,
   DollarSign, Shield, Plus,
-  Zap, Home, ArrowRight, Command, Menu, X,
+  Zap, Home, ArrowRight, Command, Menu, X, KeyRound,
 } from 'lucide-react';
 import { cn, getInitials } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -27,6 +27,7 @@ interface NavItem {
   href: string;
   permissions?: string[];
   aiFlag?: boolean;
+  founderOnly?: boolean;
 }
 
 interface NavGroup {
@@ -42,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+      { label: 'Credentials Vault', icon: KeyRound, href: '/credentials', founderOnly: true },
     ],
   },
   {
@@ -176,8 +178,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // the command palette so both surfaces agree on what's navigable.
   const isNavItemVisible = useCallback((item: NavItem) => {
     if (item.aiFlag && !aiEnabled) return false;
+    if (item.founderOnly) {
+      if (!user) return false;
+      const userRoles = user.roles.map((r: any) => typeof r === 'string' ? r : r?.name || '');
+      return userRoles.includes('founder');
+    }
     return hasPermission(item.permissions);
-  }, [hasPermission, aiEnabled]);
+  }, [hasPermission, aiEnabled, user]);
 
   const visibleNavItems = useMemo(
     () => ALL_NAV_ITEMS.filter(isNavItemVisible),
