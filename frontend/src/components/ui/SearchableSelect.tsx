@@ -258,7 +258,7 @@ export function SearchableSelect({
               background: 'var(--surface, #f8fafc)',
               borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
               display: 'flex',
-              justify: 'space-between',
+              justifyContent: 'space-between',
               alignItems: 'center',
             }}
           >
@@ -305,7 +305,7 @@ export function SearchableSelect({
                       color: isSelected ? 'var(--accent, #7c3aed)' : 'var(--text-primary, #0f172a)',
                       display: 'flex',
                       alignItems: 'center',
-                      justify: 'space-between',
+                      justifyContent: 'space-between',
                       border: 'none',
                       cursor: 'pointer',
                       fontSize: '0.8125rem',
