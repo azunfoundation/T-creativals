@@ -117,7 +117,7 @@ export function SearchableSelect({
         style={{
           display: 'flex',
           alignItems: 'center',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           width: '100%',
           height: '42px',
           textAlign: 'left',
