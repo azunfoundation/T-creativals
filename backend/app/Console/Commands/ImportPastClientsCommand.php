@@ -232,6 +232,10 @@ class ImportPastClientsCommand extends Command
     private function getClientData(): array
     {
         return [
+            ['company_name' => 'Upayaind', 'phone' => '+1 7247139241', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Global', 'country' => 'USA', 'category' => 'Services'],
+            ['company_name' => 'Tour Hyderabad', 'phone' => '+91 9652972699', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Travel & Tourism'],
+            ['company_name' => 'Yala Reality', 'phone' => '+1 9495221103', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Global', 'country' => 'USA', 'category' => 'Real Estate'],
+            ['company_name' => 'Sky Palace', 'phone' => '+91 8790740851', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Hospitality'],
             ['company_name' => 'RL Tours and Travels', 'phone' => '+91 9502912185', 'summary' => 'Made them rank as top 3 travel agency in Hyderabad', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => 'https://rltours.in/', 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Travel & Tourism'],
             ['company_name' => 'Rentop', 'phone' => '+91 8861118415', 'summary' => 'Best bike rental platform of India', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => 'https://rentop.in/', 'city' => 'Bengaluru', 'country' => 'India', 'category' => 'Mobility & SaaS'],
             ['company_name' => 'Hotel Sky Park', 'phone' => '+91 9346468248', 'summary' => 'Took their revenue from 3 lakhs to 8 lakhs per month', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => 'https://hotelskypark.in/', 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Hospitality'],
