@@ -27,6 +27,7 @@ class Service extends Model
         'currency_id',
         'billing_type',
         'unit',
+        'badge',
         'is_active',
         'is_taxable',
         'tax_rate',

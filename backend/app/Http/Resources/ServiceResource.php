@@ -27,6 +27,7 @@ class ServiceResource extends JsonResource
             'default_price' => $this->default_price,
             'billing_type' => $this->billing_type,
             'unit' => $this->unit,
+            'badge' => $this->badge,
             'is_active' => $this->is_active,
             'is_taxable' => $this->is_taxable,
             'tax_rate' => $this->tax_rate,
