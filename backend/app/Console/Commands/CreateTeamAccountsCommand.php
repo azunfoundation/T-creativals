@@ -7,7 +7,6 @@ namespace App\Console\Commands;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
 
 class CreateTeamAccountsCommand extends Command
 {
@@ -23,7 +22,7 @@ class CreateTeamAccountsCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Create official team accounts (Rahil, Rayan, Swaran, Farhan, Faizan, Sawood) with configured roles and access permissions';
+    protected $description = 'Clean up duplicate accounts and ensure official team accounts (Rahil, Rayan, Farhan, Faizan, Sawood) exist with correct access roles';
 
     /**
      * Execute the console command.
@@ -33,69 +32,65 @@ class CreateTeamAccountsCommand extends Command
         $defaultPassword = $this->option('password');
         $hashedPassword = Hash::make($defaultPassword);
 
-        $this->info("=== CREATING CREATIVALS OS TEAM ACCOUNTS ===");
+        $this->info("=== CLEANING & CONFIGURING CREATIVALS TEAM ACCOUNTS ===");
 
         // Ensure roles & permissions are seeded
         $this->call('db:seed', ['--class' => 'RolesPermissionsSeeder']);
 
+        // 1. Clean up unwanted alias accounts and non-team members (Swaran, etc.)
+        $unwantedEmails = [
+            'swaran@creativals.in',
+            'swaran@creativals.com',
+            'founder@creativals.in',
+            'rayan@creativals.com',
+            'saud@creativals.in',
+        ];
+
+        User::whereIn('email', $unwantedEmails)
+            ->orWhere('name', 'like', '%(Alias)%')
+            ->orWhere('name', 'like', '%Swaran%')
+            ->forceDelete();
+
+        // 2. Define the exact 5 team members
         $teamMembers = [
             [
                 'name' => 'Rahil',
                 'email' => 'founder@creativals.com',
-                'secondary_email' => 'founder@creativals.in',
                 'role' => 'founder',
                 'phone' => '+91 9505652923',
-                'designation' => 'Founder & CEO',
-                'access_level' => 'Full Super-Admin Access (Finances, Projects, CRM, Operations, Settings)',
+                'access_level' => 'Full Super-Admin Access (Finances, Revenue, Projects, CRM, Settings)',
             ],
             [
                 'name' => 'Rayan',
                 'email' => 'rayan@creativals.in',
-                'secondary_email' => 'rayan@creativals.com',
                 'role' => 'director',
                 'phone' => '+91 9000000001',
-                'designation' => 'Co-Founder & Director',
-                'access_level' => 'Full Executive Access (Finances, Projects, CRM, Reports)',
-            ],
-            [
-                'name' => 'Swaran',
-                'email' => 'swaran@creativals.in',
-                'secondary_email' => 'swaran@creativals.com',
-                'role' => 'director',
-                'phone' => '+91 9000000002',
-                'designation' => 'Director',
-                'access_level' => 'Full Executive Access (Finances, Projects, CRM, Reports)',
+                'access_level' => 'Full Executive Access (Finances, Revenue, Projects, CRM, Reports)',
             ],
             [
                 'name' => 'Farhan',
                 'email' => 'farhan@creativals.in',
-                'secondary_email' => null,
-                'role' => 'project_manager',
+                'role' => 'director',
                 'phone' => '+91 9000000003',
-                'designation' => 'Project Manager',
-                'access_level' => 'Full Project & Operations Access (Projects, Tasks, Subtasks, Timesheets, Assignments)',
+                'access_level' => 'Full Executive Access (Finances, Revenue, Projects, CRM, Operations)',
             ],
             [
                 'name' => 'Faizan',
                 'email' => 'faizan@creativals.in',
-                'secondary_email' => null,
                 'role' => 'employee',
                 'phone' => '+91 9000000004',
-                'designation' => 'Software Engineer / Specialist',
-                'access_level' => 'Restricted Employee Access (Assigned Projects & Tasks, Subtasks, Time Tracking, Timer, Timesheets. Financials Hidden)',
+                'access_level' => 'Restricted Employee Access (Assigned Projects & Tasks, Subtasks, Time Tracking. NO Finances)',
             ],
             [
                 'name' => 'Sawood',
                 'email' => 'sawood@creativals.in',
-                'secondary_email' => 'saud@creativals.in',
                 'role' => 'employee',
                 'phone' => '+91 9000000005',
-                'designation' => 'Software Engineer / Specialist',
-                'access_level' => 'Restricted Employee Access (Assigned Projects & Tasks, Subtasks, Time Tracking, Timer, Timesheets. Financials Hidden)',
+                'access_level' => 'Restricted Employee Access (Assigned Projects & Tasks, Subtasks, Time Tracking. NO Finances)',
             ],
         ];
 
-        $headers = ['Name', 'Primary Email', 'Role', 'Access Level'];
+        $headers = ['Name', 'Email', 'Role', 'Access Level'];
         $rows = [];
 
         foreach ($teamMembers as $memberData) {
@@ -108,29 +103,13 @@ class CreateTeamAccountsCommand extends Command
                     'password' => $hashedPassword,
                     'phone' => $memberData['phone'],
                     'status' => 'active',
-                    'must_change_password' => ($memberData['role'] !== 'founder'),
+                    'must_change_password' => false,
                 ]);
             } else {
                 $user->update([
                     'name' => $memberData['name'],
                     'status' => 'active',
                 ]);
-            }
-
-            // Also create secondary email alias account if specified
-            if (!empty($memberData['secondary_email'])) {
-                $aliasUser = User::where('email', $memberData['secondary_email'])->first();
-                if (!$aliasUser) {
-                    $aliasUser = User::create([
-                        'name' => $memberData['name'] . ' (Alias)',
-                        'email' => $memberData['secondary_email'],
-                        'password' => $hashedPassword,
-                        'phone' => $memberData['phone'],
-                        'status' => 'active',
-                        'must_change_password' => false,
-                    ]);
-                }
-                $aliasUser->syncRoles([$memberData['role']]);
             }
 
             $user->syncRoles([$memberData['role']]);
@@ -144,8 +123,7 @@ class CreateTeamAccountsCommand extends Command
         }
 
         $this->table($headers, $rows);
-        $this->info("✅ SUCCESS: All team accounts created and roles assigned.");
-        $this->info("Initial password for all new accounts: {$defaultPassword}");
+        $this->info("✅ SUCCESS: Team accounts cleaned and exact 5 accounts configured!");
 
         return Command::SUCCESS;
     }
