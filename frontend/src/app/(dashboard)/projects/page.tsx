@@ -26,6 +26,7 @@ import {
 import { formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 const PROJECTS_HOWTO = {
   overview: 'A Project tracks one paid piece of work for a client from kickoff to delivery — its team, budget, deadlines, milestones, and tasks all live here.',
@@ -1169,19 +1170,19 @@ export default function ProjectsPage() {
                 <div className="form-group">
                   <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     Client *
-                    <HelpIcon text="The client account this project is billed under. Don't see them here? Add them as a client under Users first." />
+                    <HelpIcon text="The client account this project is billed under. Type to search by company name or client name." />
                   </label>
-                  <select
-                    required
+                  <SearchableSelect
+                    options={clients.map(c => ({
+                      value: c.id,
+                      label: c.name,
+                      sublabel: c.email,
+                    }))}
                     value={newClientId}
-                    onChange={(e) => setNewClientId(e.target.value)}
-                    className="form-input"
-                  >
-                    <option value="">Select a client</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
-                    ))}
-                  </select>
+                    onChange={setNewClientId}
+                    placeholder="Search or select a client..."
+                    required
+                  />
                   {isClientsError && (
                     <p style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.375rem' }}>
                       Couldn't load the client list — refresh the page to retry.
@@ -1194,16 +1195,16 @@ export default function ProjectsPage() {
                     Linked Invoice
                     <HelpIcon text="Optional — link the invoice that is funding this project, for reporting." />
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={invoices.map(inv => ({
+                      value: inv.id,
+                      label: `${inv.invoice_number} - ${inv.title}`,
+                      sublabel: `₹${inv.total_amount ? inv.total_amount.toLocaleString() : '0'}`,
+                    }))}
                     value={newInvoiceId}
-                    onChange={(e) => setNewInvoiceId(e.target.value)}
-                    className="form-input"
-                  >
-                    <option value="">None</option>
-                    {invoices.map(inv => (
-                      <option key={inv.id} value={inv.id}>{inv.invoice_number} - {inv.title} (₹{inv.total_amount.toLocaleString()})</option>
-                    ))}
-                  </select>
+                    onChange={setNewInvoiceId}
+                    placeholder="Search invoice..."
+                  />
                 </div>
               </div>
 
@@ -1212,17 +1213,17 @@ export default function ProjectsPage() {
                   Project Manager *
                   <HelpIcon text="The employee accountable for this project's delivery — shown throughout the app as the point of contact." />
                 </label>
-                <select
-                  required
+                <SearchableSelect
+                  options={users.map(u => ({
+                    value: u.id,
+                    label: u.name,
+                    sublabel: u.employee_id || u.email || 'Team Member',
+                  }))}
                   value={newManagerId}
-                  onChange={(e) => setNewManagerId(e.target.value)}
-                  className="form-input"
-                >
-                  <option value="">Select Project Manager</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.employee_id || 'Employee'})</option>
-                  ))}
-                </select>
+                  onChange={setNewManagerId}
+                  placeholder="Search project manager..."
+                  required
+                />
               </div>
 
               {editingProject && (
