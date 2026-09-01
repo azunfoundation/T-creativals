@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\ClientContact;
 use App\Models\Lead;
 use App\Models\LeadContact;
 use App\Models\LeadSource;
 use App\Models\LeadStage;
 use App\Models\LeadTag;
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class ImportPastClientsCommand extends Command
 {
@@ -26,7 +30,7 @@ class ImportPastClientsCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Import 130+ historical agency clients into the Creativals OS CRM database';
+    protected $description = 'Import & convert 185 historical agency clients into both Lead records and Client Users with Rahil Azeez assigned as Sales Exec & Sales Head';
 
     /**
      * Execute the console command.
@@ -35,7 +39,19 @@ class ImportPastClientsCommand extends Command
     {
         $isDryRun = $this->option('dry-run');
 
-        $this->info($isDryRun ? '=== DRY RUN MODE: No changes will be saved to DB ===' : '=== IMPORTING HISTORICAL CLIENTS ===');
+        $this->info($isDryRun ? '=== DRY RUN MODE: No changes will be saved to DB ===' : '=== CONVERTING & IMPORTING HISTORICAL CLIENTS ===');
+
+        // Find or fallback to Rahil Azeez user (founder@creativals.com)
+        $rahilUser = User::where('email', 'founder@creativals.com')->first()
+            ?? User::where('name', 'like', '%Rahil%')->first()
+            ?? User::first();
+
+        if (!$rahilUser) {
+            $this->error("Error: Could not find Rahil Azeez (founder@creativals.com) user account.");
+            return Command::FAILURE;
+        }
+
+        $this->info("Assigned Sales Executive & Sales Head: {$rahilUser->name} ({$rahilUser->email})");
 
         $stage = LeadStage::firstOrCreate(
             ['slug' => 'converted'],
@@ -49,7 +65,7 @@ class ImportPastClientsCommand extends Command
 
         $clients = $this->getClientData();
         $importedCount = 0;
-        $skippedCount = 0;
+        $convertedCount = 0;
 
         DB::beginTransaction();
 
@@ -59,76 +75,153 @@ class ImportPastClientsCommand extends Command
                     continue;
                 }
 
-                $existing = Lead::where('company_name', $clientData['company_name'])->first();
-                if ($existing) {
-                    $this->warn("Skipping existing lead: {$clientData['company_name']}");
-                    $skippedCount++;
-                    continue;
-                }
+                $companyName = trim($clientData['company_name']);
+                $slug = Str::slug($companyName);
+
+                // Generate clean, unique client email for system directory
+                $cleanEmail = $this->generateClientEmail($companyName, $clientData['website_url'] ?? null, $index);
 
                 if ($isDryRun) {
-                    $this->line("Would import: [{$clientData['company_name']}] - Phone: {$clientData['phone']} - Services: " . implode(', ', $clientData['services']));
+                    $this->line("Would convert: [{$companyName}] -> Client User Email: {$cleanEmail}");
                     $importedCount++;
                     continue;
                 }
 
-                $lead = Lead::create([
-                    'company_name' => $clientData['company_name'],
-                    'website_url' => $clientData['website_url'] ?? null,
-                    'whatsapp_number' => $clientData['phone'] ?? null,
-                    'city' => $clientData['city'] ?? null,
-                    'country' => $clientData['country'] ?? 'India',
-                    'lead_source_id' => $source->id,
-                    'stage_id' => $stage->id,
-                    'priority' => 'medium',
-                    'temperature' => 'warm',
-                    'notes' => $clientData['summary'] ?? null,
-                    'is_converted' => true,
-                    'converted_at' => now(),
-                ]);
+                // 1. Create or Update Client User Account (User table with role 'client')
+                $clientUser = User::where('company_name', $companyName)
+                    ->orWhere('email', $cleanEmail)
+                    ->first();
 
-                if (!empty($clientData['phone'])) {
-                    LeadContact::create([
-                        'lead_id' => $lead->id,
-                        'name' => $clientData['company_name'] . ' Contact',
-                        'phone' => $clientData['phone'],
-                        'whatsapp' => $clientData['phone'],
-                        'is_primary' => true,
+                if (!$clientUser) {
+                    $clientUser = User::create([
+                        'name' => $companyName,
+                        'company_name' => $companyName,
+                        'email' => $cleanEmail,
+                        'password' => Hash::make(Str::random(16)),
+                        'phone' => $clientData['phone'] ?? null,
+                        'billing_address' => implode(', ', array_filter([$clientData['city'] ?? null, $clientData['country'] ?? 'India'])),
+                        'status' => 'active',
+                        'is_client_portal_user' => true,
+                    ]);
+                } else {
+                    $clientUser->update([
+                        'company_name' => $companyName,
+                        'phone' => $clientData['phone'] ?? $clientUser->phone,
+                        'status' => 'active',
                     ]);
                 }
 
+                $clientUser->syncRoles(['client']);
+
+                // Create primary Client Contact if phone exists
+                if (!empty($clientData['phone'])) {
+                    ClientContact::updateOrCreate(
+                        ['client_id' => $clientUser->id, 'phone' => $clientData['phone']],
+                        [
+                            'name' => $companyName . ' Representative',
+                            'phone' => $clientData['phone'],
+                            'is_primary' => true,
+                        ]
+                    );
+                }
+
+                // 2. Create or Update Lead record
+                $lead = Lead::where('company_name', $companyName)->first();
+
+                if (!$lead) {
+                    $lead = Lead::create([
+                        'company_name' => $companyName,
+                        'website_url' => $clientData['website_url'] ?? null,
+                        'whatsapp_number' => $clientData['phone'] ?? null,
+                        'city' => $clientData['city'] ?? null,
+                        'country' => $clientData['country'] ?? 'India',
+                        'lead_source_id' => $source->id,
+                        'stage_id' => $stage->id,
+                        'sales_exec_id' => $rahilUser->id,
+                        'sales_head_id' => $rahilUser->id,
+                        'created_by' => $rahilUser->id,
+                        'priority' => 'high',
+                        'temperature' => 'hot',
+                        'notes' => $clientData['summary'] ?? null,
+                        'is_converted' => true,
+                        'converted_client_id' => $clientUser->id,
+                        'converted_at' => now(),
+                    ]);
+                } else {
+                    $lead->update([
+                        'sales_exec_id' => $rahilUser->id,
+                        'sales_head_id' => $rahilUser->id,
+                        'stage_id' => $stage->id,
+                        'is_converted' => true,
+                        'converted_client_id' => $clientUser->id,
+                        'converted_at' => $lead->converted_at ?? now(),
+                    ]);
+                }
+
+                if (!empty($clientData['phone'])) {
+                    LeadContact::updateOrCreate(
+                        ['lead_id' => $lead->id, 'phone' => $clientData['phone']],
+                        [
+                            'name' => $companyName . ' Primary Contact',
+                            'phone' => $clientData['phone'],
+                            'whatsapp' => $clientData['phone'],
+                            'is_primary' => true,
+                        ]
+                    );
+                }
+
+                // Attach tags
                 foreach ($clientData['services'] as $serviceName) {
-                    LeadTag::create([
+                    LeadTag::firstOrCreate([
                         'lead_id' => $lead->id,
                         'tag' => $serviceName,
                     ]);
                 }
 
                 if (!empty($clientData['category'])) {
-                    LeadTag::create([
+                    LeadTag::firstOrCreate([
                         'lead_id' => $lead->id,
                         'tag' => 'Category: ' . $clientData['category'],
                     ]);
                 }
 
                 $importedCount++;
-                $this->info("Imported ({$importedCount}): {$clientData['company_name']}");
+                $convertedCount++;
+                $this->info("Converted ({$importedCount}): {$companyName} -> Client ID #{$clientUser->id}");
             }
 
             if ($isDryRun) {
                 DB::rollBack();
-                $this->info("Dry run complete. {$importedCount} records validated, {$skippedCount} skipped.");
+                $this->info("Dry run complete. {$importedCount} records validated.");
             } else {
                 DB::commit();
-                $this->info("SUCCESS: Successfully imported {$importedCount} historical clients into CRM database! ({$skippedCount} skipped)");
+                $this->info("SUCCESS: Successfully converted {$convertedCount} historical clients into official Client User accounts! All assigned to Rahil Azeez.");
             }
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {
             DB::rollBack();
-            $this->error("FAILED: Import failed due to exception: " . $e->getMessage());
+            $this->error("FAILED: Import failed due to exception: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Generate clean, unique client email address.
+     */
+    private function generateClientEmail(string $companyName, ?string $websiteUrl, int $index): string
+    {
+        $slug = Str::slug($companyName);
+
+        if (!empty($websiteUrl) && str_contains($websiteUrl, '.')) {
+            $host = parse_url($websiteUrl, PHP_URL_HOST) ?? $websiteUrl;
+            $host = preg_replace('/^www\./', '', strtolower(trim($host)));
+            if (!empty($host) && str_contains($host, '.')) {
+                return 'contact@' . $host;
+            }
+        }
+
+        return 'client.' . $slug . '.' . ($index + 1) . '@creativals.in';
     }
 
     /**
