@@ -30,6 +30,7 @@ import ApplyTemplateModal from '../components/ApplyTemplateModal';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { HelpIcon } from '@/components/ui/HelpIcon';
 import { HowToUseGuide } from '@/components/ui/HowToUseGuide';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 const PROJECT_DETAIL_HOWTO = {
   overview: 'This page is mission control for one project: its team, timeline, tasks, milestones, hours, and money.',
@@ -1826,49 +1827,58 @@ export default function ProjectDetailPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Client *</label>
-                  <select
-                    required
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Client *
+                    <HelpIcon text="The client account this project is billed under. Type to search." />
+                  </label>
+                  <SearchableSelect
+                    options={clients.map((c: any) => ({
+                      value: c.id,
+                      label: c.name,
+                      sublabel: c.email,
+                    }))}
                     value={editClientId}
-                    onChange={(e) => setEditClientId(e.target.value)}
-                    className="form-input"
-                  >
-                    <option value="">Select a client</option>
-                    {clients.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
-                    ))}
-                  </select>
+                    onChange={setEditClientId}
+                    placeholder="Search or select a client..."
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Linked Invoice</label>
-                  <select
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Linked Invoice
+                    <HelpIcon text="Optional — link the invoice that is funding this project." />
+                  </label>
+                  <SearchableSelect
+                    options={invoices.map((inv: any) => ({
+                      value: inv.id,
+                      label: `${inv.invoice_number} - ${inv.title}`,
+                      sublabel: `₹${inv.total_amount ? inv.total_amount.toLocaleString() : '0'}`,
+                    }))}
                     value={editInvoiceId}
-                    onChange={(e) => setEditInvoiceId(e.target.value)}
-                    className="form-input"
-                  >
-                    <option value="">None</option>
-                    {invoices.map((inv: any) => (
-                      <option key={inv.id} value={inv.id}>{inv.invoice_number} - {inv.title} (₹{inv.total_amount.toLocaleString()})</option>
-                    ))}
-                  </select>
+                    onChange={setEditInvoiceId}
+                    placeholder="Search invoice..."
+                  />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Project Manager *</label>
-                  <select
-                    required
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Project Manager *
+                    <HelpIcon text="The employee accountable for this project's delivery." />
+                  </label>
+                  <SearchableSelect
+                    options={users.map((u: any) => ({
+                      value: u.id,
+                      label: u.name,
+                      sublabel: u.employee_id || u.email || 'Team Member',
+                    }))}
                     value={editManagerId}
-                    onChange={(e) => setEditManagerId(e.target.value)}
-                    className="form-input"
-                  >
-                    <option value="">Select Project Manager</option>
-                    {users.map((u: any) => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.employee_id || 'Employee'})</option>
-                    ))}
-                  </select>
+                    onChange={setEditManagerId}
+                    placeholder="Search project manager..."
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
@@ -1923,10 +1933,12 @@ export default function ProjectDetailPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Target End Date *</label>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    End Date (Optional)
+                    <HelpIcon text="Optional — leave blank for ongoing retainer projects (e.g. monthly marketing, recurring retainers)." />
+                  </label>
                   <input
                     type="date"
-                    required
                     value={editEndDate}
                     onChange={(e) => setEditEndDate(e.target.value)}
                     className="form-input"

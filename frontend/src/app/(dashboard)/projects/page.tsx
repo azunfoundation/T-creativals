@@ -328,8 +328,8 @@ export default function ProjectsPage() {
       client_id: newClientId ? parseInt(newClientId) : undefined,
       invoice_id: newInvoiceId ? parseInt(newInvoiceId) : undefined,
       manager_id: newManagerId ? parseInt(newManagerId) : undefined,
-      start_date: newStartDate,
-      end_date: newEndDate,
+      start_date: newStartDate || undefined,
+      end_date: newEndDate ? newEndDate : null,
       budget_hours: parseFloat(newBudgetHours) || 0,
       budget_amount: parseFloat(newBudgetAmount) || 0,
       description: newDescription,
@@ -801,7 +801,7 @@ export default function ProjectsPage() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '4px' }}>
                           <Calendar size={12} style={{ color: 'var(--text-muted)' }} />
-                          <span>End: {formatDate(project.end_date)}</span>
+                          <span>End: {project.end_date ? formatDate(project.end_date) : 'Ongoing'}</span>
                         </div>
                       </td>
                       {canViewFinancials && (
@@ -1258,10 +1258,12 @@ export default function ProjectsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">End Date *</label>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    End Date (Optional)
+                    <HelpIcon text="Optional — leave blank for ongoing retainer projects (e.g. monthly marketing, recurring retainers)." />
+                  </label>
                   <input
                     type="date"
-                    required
                     value={newEndDate}
                     onChange={(e) => setNewEndDate(e.target.value)}
                     className="form-input"
