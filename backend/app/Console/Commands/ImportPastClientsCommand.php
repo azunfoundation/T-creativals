@@ -232,6 +232,7 @@ class ImportPastClientsCommand extends Command
     private function getClientData(): array
     {
         return [
+            ['company_name' => 'Keka Pre School', 'phone' => '+91 9490885858', 'summary' => 'Zero to full digital', 'services' => ['Web Dev', 'Marketing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Early Education'],
             ['company_name' => 'House of Form', 'phone' => '+91 9963734499', 'summary' => 'Zero to full digital', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Design & Living'],
             ['company_name' => 'Rawdah Express', 'phone' => '+1 5612125941', 'summary' => 'Website development for Umrah site in USA', 'services' => ['Web Dev'], 'website_url' => null, 'city' => 'Florida', 'country' => 'USA', 'category' => 'Travel & Umrah'],
             ['company_name' => 'Bear Lake Montessori', 'phone' => '+1 4079211323', 'summary' => 'Zero to full digital', 'services' => ['Web Dev', 'Marketing'], 'website_url' => null, 'city' => 'Florida', 'country' => 'USA', 'category' => 'Early Education'],
