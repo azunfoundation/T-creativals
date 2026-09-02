@@ -232,6 +232,9 @@ class ImportPastClientsCommand extends Command
     private function getClientData(): array
     {
         return [
+            ['company_name' => 'House of Form', 'phone' => '+91 9963734499', 'summary' => 'Zero to full digital', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Design & Living'],
+            ['company_name' => 'Rawdah Express', 'phone' => '+1 5612125941', 'summary' => 'Website development for Umrah site in USA', 'services' => ['Web Dev'], 'website_url' => null, 'city' => 'Florida', 'country' => 'USA', 'category' => 'Travel & Umrah'],
+            ['company_name' => 'Bear Lake Montessori', 'phone' => '+1 4079211323', 'summary' => 'Zero to full digital', 'services' => ['Web Dev', 'Marketing'], 'website_url' => null, 'city' => 'Florida', 'country' => 'USA', 'category' => 'Early Education'],
             ['company_name' => 'Upayaind', 'phone' => '+1 7247139241', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Global', 'country' => 'USA', 'category' => 'Services'],
             ['company_name' => 'Tour Hyderabad', 'phone' => '+91 9652972699', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Hyderabad', 'country' => 'India', 'category' => 'Travel & Tourism'],
             ['company_name' => 'Yala Reality', 'phone' => '+1 9495221103', 'summary' => 'Agency Client', 'services' => ['Web Dev', 'Marketing', 'Graphic Designing'], 'website_url' => null, 'city' => 'Global', 'country' => 'USA', 'category' => 'Real Estate'],
