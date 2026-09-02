@@ -185,7 +185,7 @@ export default function ProjectsPage() {
   const { data: projectsData = [], isLoading: isLoadingProjects, isError: isProjectsError } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: async () => {
-      const res = await projectsApi.list();
+      const res = await projectsApi.list({ per_page: 100 });
       const data = res.data.data || [];
       return data.map((p: any) => ({
         ...p,

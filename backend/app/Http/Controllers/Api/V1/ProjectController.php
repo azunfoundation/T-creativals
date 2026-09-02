@@ -44,7 +44,7 @@ class ProjectController extends Controller
             $query->where('client_id', $user->id);
         }
 
-        $projects = $query->paginate((int) $request->input('per_page', 15));
+        $projects = $query->paginate((int) $request->input('per_page', 100));
         return ProjectResource::collection($projects)->response();
     }
 
