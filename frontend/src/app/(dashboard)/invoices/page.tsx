@@ -13,7 +13,7 @@ import {
   Plus, Search, Receipt, ChevronLeft, ChevronRight, Eye, 
   Calendar, DollarSign, Check, X, Banknote, LayoutGrid, 
   List, Trash2, ArrowUpRight, ArrowDownLeft, CreditCard, Clock, AlertTriangle,
-  Download, Filter, MoreVertical, FileText, TrendingUp, ChevronDown, ArrowRight
+  Download, Filter, MoreVertical, FileText, TrendingUp, ChevronDown, ArrowRight, Pencil
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useWorkspace } from '@/providers/WorkspaceProvider';
@@ -557,6 +557,14 @@ export default function InvoicesDashboard() {
                                   style={{ color: 'var(--text-muted)' }}
                                 >
                                   <Eye size={16} />
+                                </Link>
+                                <Link
+                                  href={`/invoices/create?editId=${inv.id}`}
+                                  className="btn btn-ghost btn-sm btn-icon"
+                                  title="Edit Invoice"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  <Pencil size={16} />
                                 </Link>
                                 {!isPaid && inv.status !== 'cancelled' && inv.status !== 'void' ? (
                                   <button

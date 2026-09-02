@@ -13,7 +13,7 @@ import type { Invoice, Payment } from '@/lib/api';
 import { 
   ArrowLeft, Printer, FileText, Calendar, Building, CreditCard, 
   User as UserIcon, AlertCircle, X, Banknote, HelpCircle, CheckCircle, 
-  Trash2, Plus, Clock, Mail, Loader2
+  Trash2, Plus, Clock, Mail, Loader2, Pencil
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -425,6 +425,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<Params> 
             {sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
             <span>Email to Client</span>
           </button>
+
+          <Link
+            href={`/invoices/create?editId=${invoice.id}`}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            <Pencil size={14} /> Edit Invoice
+          </Link>
           
           <button
             onClick={handlePrint}

@@ -76,13 +76,59 @@ function InvoiceBuilderForm() {
   const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const editParamId = searchParams.get('editId') || searchParams.get('edit_id');
   const quoteParamId = searchParams.get('quoteId') || searchParams.get('quote_id');
+  const isEditing = !!editParamId;
   const { activeProjectId } = useWorkspace();
 
   // Form Field States
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [clientId, setClientId] = useState<number | ''>('');
+  const [status, setStatus] = useState<string>('draft');
+
+  // Fetch Existing Invoice if in Edit Mode
+  const { data: existingInvoice } = useQuery({
+    queryKey: ['invoice_edit', editParamId],
+    queryFn: async () => {
+      if (!editParamId) return null;
+      const res = await invoicesApi.get(Number(editParamId));
+      return (res.data as any).data || res.data;
+    },
+    enabled: !!editParamId,
+  });
+
+  // Prefill invoice data when editing
+  useEffect(() => {
+    if (existingInvoice) {
+      if (existingInvoice.title) setTitle(existingInvoice.title);
+      if (existingInvoice.description) setDescription(existingInvoice.description);
+      if (existingInvoice.client_id) setClientId(Number(existingInvoice.client_id));
+      if (existingInvoice.quote_id) setQuoteId(Number(existingInvoice.quote_id));
+      if (existingInvoice.status) setStatus(existingInvoice.status);
+      if (existingInvoice.issue_date) setIssueDate(existingInvoice.issue_date.split('T')[0]);
+      if (existingInvoice.due_date) setDueDate(existingInvoice.due_date.split('T')[0]);
+      if (existingInvoice.terms_conditions) setTerms(existingInvoice.terms_conditions);
+      if (existingInvoice.client_notes) setClientNotes(existingInvoice.client_notes);
+      if (existingInvoice.internal_notes) setInternalNotes(existingInvoice.internal_notes);
+      if (existingInvoice.is_recurring !== undefined) setIsRecurring(!!existingInvoice.is_recurring);
+      if (existingInvoice.recurring_interval) setRecurringInterval(existingInvoice.recurring_interval);
+      if (existingInvoice.recurring_end_date) setRecurringEndDate(existingInvoice.recurring_end_date.split('T')[0]);
+
+      if (existingInvoice.items && existingInvoice.items.length > 0) {
+        setLineItems(
+          existingInvoice.items.map((it: any) => ({
+            service_id: it.service_id || '',
+            description: it.description || '',
+            quantity: parseFloat(it.quantity) || 1,
+            unit_price: parseFloat(it.unit_price) || 0,
+            discount_percent: parseFloat(it.discount_percent) || 0,
+            tax_rate: it.tax_rate !== undefined && it.tax_rate !== null ? parseFloat(it.tax_rate) : 18,
+          }))
+        );
+      }
+    }
+  }, [existingInvoice]);
 
   // Prefill client from active project context
   useEffect(() => {
@@ -299,11 +345,24 @@ function InvoiceBuilderForm() {
   const createMutation = useMutation({
     mutationFn: (data: any) => invoicesApi.create(data),
     onSuccess: (res) => {
+      showToast('Invoice created successfully.', 'success');
       router.push(`/invoices/${res.data.id}`);
     },
     onError: (err: any) => {
       setSubmitError(getApiErrorMessage(err, 'Failed to create invoice.'));
       showToast(getApiErrorMessage(err, 'Failed to create invoice.'), 'error');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => invoicesApi.update(Number(editParamId), data),
+    onSuccess: () => {
+      showToast('Invoice updated successfully.', 'success');
+      router.push(`/invoices/${editParamId}`);
+    },
+    onError: (err: any) => {
+      setSubmitError(getApiErrorMessage(err, 'Failed to update invoice.'));
+      showToast(getApiErrorMessage(err, 'Failed to update invoice.'), 'error');
     }
   });
 
@@ -335,6 +394,7 @@ function InvoiceBuilderForm() {
       currency_id: currencyId,
       title: title.trim(),
       description: description.trim() || undefined,
+      status: status || 'draft',
       issue_date: issueDate,
       due_date: dueDate,
       terms_conditions: terms,
@@ -353,7 +413,11 @@ function InvoiceBuilderForm() {
       }))
     };
 
-    createMutation.mutate(payload);
+    if (isEditing) {
+      updateMutation.mutate(payload);
+    } else {
+      createMutation.mutate(payload);
+    }
   };
 
   return (
